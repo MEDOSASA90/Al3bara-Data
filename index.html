@@ -1,55 +1,93 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>مدير الحسابات والمزادات</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>العبارة للتجارة والتوريدات</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+
+    body {
+      font-family: 'Cairo', sans-serif;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    @keyframes fadeInScale {
+      0% {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .animate-fadeIn {
+      animation: fadeIn 1s ease-in-out forwards;
+    }
+
+    .animate-float {
+      animation: float 4s ease-in-out infinite;
+    }
+
+    .animate-fadeInScale {
+      animation: fadeInScale 1.5s ease-in-out forwards;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+
+      #print-area,
+      #print-area * {
+        visibility: visible;
+      }
+
+      #print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+
+      @page {
+        size: A4;
+        margin: 20mm;
+      }
 
       body {
-        font-family: 'Cairo', sans-serif;
+        background-color: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
-
-      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes float { 
-        0%, 100% { transform: translateY(0); } 
-        50% { transform: translateY(-10px); } 
-      }
-      @keyframes fadeInScale { 
-        0% { opacity: 0; transform: scale(0.95); }
-        100% { opacity: 1; transform: scale(1); }
-      }
-      .animate-fadeIn { animation: fadeIn 1s ease-in-out forwards; }
-      .animate-float { animation: float 4s ease-in-out infinite; }
-      .animate-fadeInScale { animation: fadeInScale 1.5s ease-in-out forwards; }
-
-      @media print {
-        body * {
-          visibility: hidden;
-        }
-        #print-area, #print-area * {
-          visibility: visible;
-        }
-        #print-area {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-        }
-        @page {
-          size: A4;
-          margin: 20mm;
-        }
-        body {
-            background-color: #fff;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-      }
-    </style>
+    }
+  </style>
   <script type="importmap">
 {
   "imports": {
@@ -64,10 +102,12 @@
 </script>
 
 </head>
-  <body>
-    <div id="root"></div>
-    
-    <!-- The main application script (index.tsx) handles Firebase initialization -->
+
+<body>
+  <div id="root"></div>
+
+  <!-- The main application script (index.tsx) handles Firebase initialization -->
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

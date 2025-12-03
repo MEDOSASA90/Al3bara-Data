@@ -1368,9 +1368,8 @@ const App: React.FC = () => {
             value70: (lotData.totalValue || 0) - (lotData.value30 || 0),
         };
 
-        if (lotData.contractImage !== undefined) {
-            newLotData.contractImage = lotData.contractImage;
-        }
+        // Always update contractImage field, even if it's null (to remove image)
+        newLotData.contractImage = lotData.contractImage ?? null;
 
         const updatedLots = editingLot
             ? entity.lots.map(l => l.id === editingLot.id ? { ...l, ...newLotData } : l)
@@ -1621,6 +1620,13 @@ const App: React.FC = () => {
             <html dir="rtl">
                 <head>
                     <title>تصدير PDF</title>
+                    <script>
+                        const originalWarn = console.warn;
+                        console.warn = (...args) => {
+                            if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
+                            originalWarn.apply(console, args);
+                        };
+                    </script>
                     <script src="https://cdn.tailwindcss.com"></script>
                     <style>
                         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -1692,35 +1698,68 @@ const App: React.FC = () => {
                     </div>
 
                     <script>
-                        function openImageModal(imageUrl, imageName) {
-                            const modal = document.getElementById('imageModal');
-                            const modalImg = document.getElementById('modalImage');
-                            modal.classList.add('active');
-                            modalImg.src = imageUrl;
-                            modalImg.alt = imageName;
+                    function openImageModal(imageUrl, imageName) {
+                        const modal = document.getElementById('imageModal');
+                        const modalImg = document.getElementById('modalImage');
+                        modal.classList.add('active');
+                        modalImg.src = imageUrl;
+                        modalImg.alt = imageName;
+                    }
+
+                    function closeImageModal() {
+                        const modal = document.getElementById('imageModal');
+                        modal.classList.remove('active');
+                    }
+
+                    // Close modal on Escape key
+                    document.addEventListener('keydown', function(event) {
+                        if (event.key === 'Escape') {
+                            closeImageModal();
+                        }
+                    });
+
+                    // Wait for all images to load before printing
+                    window.onload = function() {
+                        const images = document.getElementsByTagName('img');
+                        let loadedCount = 0;
+                        const totalImages = images.length;
+
+                        if (totalImages === 0) {
+                            window.print();
+                            return;
                         }
 
-                        function closeImageModal() {
-                            const modal = document.getElementById('imageModal');
-                            modal.classList.remove('active');
-                        }
-
-                        // Close modal on Escape key
-                        document.addEventListener('keydown', function(event) {
-                            if (event.key === 'Escape') {
-                                closeImageModal();
+                        function checkAllLoaded() {
+                            loadedCount++;
+                            if (loadedCount === totalImages) {
+                                setTimeout(() => {
+                                    window.print();
+                                }, 500);
                             }
-                        });
-                    </script>
-                </body>
-            </html>
+                        }
+
+                        for (let i = 0; i < totalImages; i++) {
+                            if (images[i].complete) {
+                                checkAllLoaded();
+                            } else {
+                                images[i].onload = checkAllLoaded;
+                                images[i].onerror = checkAllLoaded;
+                            }
+                        }
+
+                        // Fallback: Force print after 10 seconds if images hang
+                        setTimeout(() => {
+                            if (loadedCount < totalImages) {
+                                window.print();
+                            }
+                        }, 10000);
+                    };
+                </script>
+            </body>
+        </html>
         `);
         printWindow.document.close();
-
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 1000);
+        printWindow.focus();
     };
 
     const generateTransactionHTML = (client: Client, transaction: Transaction, exportDate: string): string => {
@@ -1784,7 +1823,8 @@ const App: React.FC = () => {
                                         alt="${item.name}"
                                         class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                         onerror="this.style.display='none'"
-                                        onclick="openImageModal('${getDirectImageUrl(item.image.url)}', '${item.name}')"
+                                        referrerpolicy="no-referrer"
+                                        onclick="openImageModal(this.src, '${item.name}')"
                                     />
                                 </div>
                                 <p class="text-center text-xs text-slate-500 mt-2 font-semibold">${item.name}</p>
@@ -1871,17 +1911,17 @@ const App: React.FC = () => {
 
             const lotsHTML = activeLots.map(lot => `
                 <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                    <td class="p-3 text-slate-700 font-medium">${lot.lotNumber}</td>
-                    <td class="p-3 text-slate-700">${lot.name}</td>
-                    <td class="p-3 text-slate-600 font-mono text-sm">${lot.quantity || '-'}</td>
-                    <td class="p-3 text-slate-800 font-bold font-mono text-sm">${formatCurrency(lot.totalValue)}</td>
-                    <td class="p-3 text-slate-700 font-mono text-sm">${formatCurrency(lot.value30)}</td>
-                    <td class="p-3 text-slate-700 font-mono text-sm">${formatCurrency(lot.value70)}</td>
-                    <td class="p-3 text-center">
+                    <td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
+                    <td class="p-4 text-slate-700 font-medium">${lot.name}</td>
+                    <td class="p-4 text-slate-600 font-semibold text-base">${lot.quantity || '-'}</td>
+                    <td class="p-4 font-black text-blue-700 text-lg" dir="ltr">${formatCurrency(lot.totalValue)}</td>
+                    <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(lot.value30)}</td>
+                    <td class="p-4 font-black text-orange-700 text-lg" dir="ltr">${formatCurrency(lot.value70)}</td>
+                    <td class="p-4 text-center">
                         ${lot.is70Paid
-                    ? `<span class="inline-block px-2 py-1 rounded text-xs font-bold bg-green-100 text-green-700">تم السداد</span>
+                    ? `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 text-green-700">تم السداد</span>
                                ${lot.paymentDetails?.payerName ? `<div class="text-xs text-slate-500 mt-1">بواسطة: ${lot.paymentDetails.payerName}</div>` : ''}`
-                    : `<span class="inline-block px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`
+                    : `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`
                 }
                     </td>
                 </tr>
@@ -1890,35 +1930,46 @@ const App: React.FC = () => {
             return `
                 <div class="mb-8 break-inside-avoid">
                     <div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-xl p-4 text-white">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <h3 class="text-xl font-bold">${entity.name}</h3>
-                                ${entity.buyerName ? `<p class="text-sm text-white/80 mt-1">المشتري: ${entity.buyerName}</p>` : ''}
-                                <p class="text-sm text-white/80">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <h3 class="text-2xl font-black mb-2">${entity.name}</h3>
+                                ${entity.buyerName ? `<p class="text-base text-white/90 mb-2">المشتري: ${entity.buyerName}</p>` : ''}
+                                <div class="flex flex-col gap-1">
+                                    <p class="text-sm text-white/80">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
+                                    ${(() => {
+                    if (entity.auctionDate && typeof entity.auctionDate.toMillis === 'function') {
+                        const deadlineDate = new Date(entity.auctionDate.toMillis());
+                        deadlineDate.setDate(deadlineDate.getDate() + 15);
+                        const allPaid = activeLots.every(l => l.is70Paid);
+                        return `<p class="text-base font-bold ${allPaid ? 'text-green-300' : 'text-amber-300'} mt-1">آخر ميعاد للدفع: ${allPaid ? 'تم السداد ✓' : formatDate(Timestamp.fromDate(deadlineDate))}</p>`;
+                    }
+                    return '';
+                })()}
+                                </div>
                             </div>
-                            <div class="text-left">
-                                <div class="text-xs text-white/70 uppercase">عدد اللوطات</div>
-                                <div class="text-3xl font-black">${activeLots.length}</div>
+                            <div class="text-center bg-white/10 rounded-lg px-6 py-4">
+                                <div class="text-xs text-white/70 uppercase mb-1">عدد اللوطات</div>
+                                <div class="text-4xl font-black">${activeLots.length}</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="bg-blue-50 grid grid-cols-4 gap-4 p-4 border-x border-slate-200">
-                        <div>
-                            <p class="text-xs text-slate-600 font-bold uppercase">إجمالي القيمة</p>
-                            <p class="font-black text-slate-800 text-lg" dir="ltr">${formatCurrency(entityTotal)}</p>
+                    <div class="bg-gradient-to-br from-slate-50 to-blue-50 grid grid-cols-2 gap-6 p-6 border-x border-slate-200">
+                        <div class="bg-white rounded-lg p-4 shadow-sm border-r-4 border-blue-500">
+                            <p class="text-xs text-slate-500 font-bold uppercase mb-2">إجمالي القيمة</p>
+                            <p class="font-black text-blue-700 text-2xl" dir="ltr">${formatCurrency(entityTotal)}</p>
                         </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-bold uppercase">قيمة 30%</p>
-                            <p class="font-black text-slate-800 text-lg" dir="ltr">${formatCurrency(entity30)}</p>
+                        <div class="bg-white rounded-lg p-4 shadow-sm border-r-4 border-purple-500">
+                            <p class="text-xs text-slate-500 font-bold uppercase mb-2">قيمة 30%</p>
+                            <p class="font-black text-purple-700 text-2xl" dir="ltr">${formatCurrency(entity30)}</p>
                         </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-bold uppercase">قيمة 70%</p>
-                            <p class="font-black text-slate-800 text-lg" dir="ltr">${formatCurrency(entity70)}</p>
+                        <div class="bg-white rounded-lg p-4 shadow-sm border-r-4 border-orange-500">
+                            <p class="text-xs text-slate-500 font-bold uppercase mb-2">قيمة 70%</p>
+                            <p class="font-black text-orange-700 text-2xl" dir="ltr">${formatCurrency(entity70)}</p>
                         </div>
-                        <div>
-                            <p class="text-xs text-slate-600 font-bold uppercase">المتبقي</p>
-                            <p class="font-black ${entityRemaining > 0 ? 'text-red-600' : 'text-green-600'} text-lg" dir="ltr">${formatCurrency(entityRemaining)}</p>
+                        <div class="bg-white rounded-lg p-4 shadow-sm border-r-4 ${entityRemaining > 0 ? 'border-red-500' : 'border-green-500'}">
+                            <p class="text-xs text-slate-500 font-bold uppercase mb-2">المتبقي</p>
+                            <p class="font-black ${entityRemaining > 0 ? 'text-red-700' : 'text-green-700'} text-2xl" dir="ltr">${formatCurrency(entityRemaining)}</p>
                         </div>
                     </div>
 
@@ -1940,6 +1991,37 @@ const App: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    ${(() => {
+                    const lotsWithImages = activeLots.filter(lot => lot.contractImage && lot.contractImage.url);
+                    if (lotsWithImages.length === 0) return '';
+
+                    return `
+                            <div class="mt-6">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
+                                    <h4 class="text-lg font-bold text-slate-800">صور العقود المرفقة</h4>
+                                </div>
+                                <div class="grid grid-cols-3 gap-4">
+                                    ${lotsWithImages.map(lot => `
+                                        <div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                            <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                                                <img 
+                                                    src="${getDirectImageUrl(lot.contractImage.url)}"
+                                                    alt="عقد ${lot.name}"
+                                                    class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                                    onerror="this.style.display='none'"
+                                                    referrerpolicy="no-referrer"
+                                                    onclick="openImageModal(this.src, 'عقد ${lot.name}')"
+                                                />
+                                            </div>
+                                            <p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                })()}
                 </div>
             `;
         }).filter(html => html).join('');
@@ -1967,55 +2049,23 @@ const App: React.FC = () => {
                 </header>
 
                 <section class="mb-10">
-                    <div class="grid grid-cols-5 gap-4">
-                        <div class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">إجمالي الفواتير</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(totalInvoices)}">${formatCurrency(totalInvoices)}</div>
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-blue-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">إجمالي الفواتير</div>
+                            <div class="text-3xl font-black text-blue-700" dir="ltr">${formatCurrency(totalInvoices)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">إجمالي 30%</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(total30)}">${formatCurrency(total30)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-purple-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">إجمالي 30%</div>
+                            <div class="text-3xl font-black text-purple-700" dir="ltr">${formatCurrency(total30)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-orange-500 to-red-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">إجمالي 70%</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(total70)}">${formatCurrency(total70)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-orange-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">إجمالي 70%</div>
+                            <div class="text-3xl font-black text-orange-700" dir="ltr">${formatCurrency(total70)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">المتبقي للسداد</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(remainingToSupply)}">${formatCurrency(remainingToSupply)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 ${remainingToSupply > 0 ? 'border-red-500' : 'border-green-500'}">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">المتبقي للسداد</div>
+                            <div class="text-3xl font-black ${remainingToSupply > 0 ? 'text-red-700' : 'text-green-700'}" dir="ltr">${formatCurrency(remainingToSupply)}</div>
                         </div>
-                        ${(() => {
-                const upcomingLot = allLots
-                    .filter(lot => !lot.is70Paid)
-                    .map(lot => {
-                        const entity = entities.find(e => e.lots && e.lots.some(l => l.id === lot.id));
-                        return { ...lot, auctionDate: entity?.auctionDate };
-                    })
-                    .filter(lot => lot.auctionDate && typeof lot.auctionDate.toMillis === 'function')
-                    .sort((a, b) => {
-                        const dateA = a.auctionDate ? a.auctionDate.toMillis() : 0;
-                        const dateB = b.auctionDate ? b.auctionDate.toMillis() : 0;
-                        return dateA - dateB;
-                    })[0];
-
-                if (upcomingLot && upcomingLot.auctionDate) {
-                    const deadlineDate = new Date(upcomingLot.auctionDate.toMillis());
-                    deadlineDate.setDate(deadlineDate.getDate() + 15);
-                    return `
-                                    <div class="bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl p-4 text-white shadow-xl">
-                                        <div class="text-[10px] uppercase font-bold text-white/80 mb-1">أقرب ميعاد سداد</div>
-                                        <div class="text-sm md:text-lg font-black">${formatDate(Timestamp.fromDate(deadlineDate))}</div>
-                                    </div>
-                                `;
-                } else {
-                    return `
-                                    <div class="bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl p-4 text-white shadow-xl">
-                                        <div class="text-[10px] uppercase font-bold text-white/80 mb-1">أقرب ميعاد سداد</div>
-                                        <div class="text-lg md:text-2xl font-black">لا يوجد</div>
-                                    </div>
-                                `;
-                }
-            })()}
                     </div>
                 </section>
 
@@ -2044,17 +2094,17 @@ const App: React.FC = () => {
 
         const lotsHTML = activeLots.map(lot => `
             <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                <td class="p-3 text-slate-700 font-medium">${lot.lotNumber}</td>
-                <td class="p-3 text-slate-700">${lot.name}</td>
-                <td class="p-3 text-slate-600 font-mono text-sm">${lot.quantity || '-'}</td>
-                <td class="p-3 text-slate-800 font-bold font-mono text-sm">${formatCurrency(lot.totalValue)}</td>
-                <td class="p-3 text-slate-700 font-mono text-sm">${formatCurrency(lot.value30)}</td>
-                <td class="p-3 text-slate-700 font-mono text-sm">${formatCurrency(lot.value70)}</td>
-                <td class="p-3 text-center">
+                <td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
+                <td class="p-4 text-slate-700 font-medium">${lot.name}</td>
+                <td class="p-4 text-slate-600 font-semibold text-base">${lot.quantity || '-'}</td>
+                <td class="p-4 font-black text-blue-700 text-lg" dir="ltr">${formatCurrency(lot.totalValue)}</td>
+                <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(lot.value30)}</td>
+                <td class="p-4 font-black text-orange-700 text-lg" dir="ltr">${formatCurrency(lot.value70)}</td>
+                <td class="p-4 text-center">
                     ${lot.is70Paid
-                ? `<span class="inline-block px-2 py-1 rounded text-xs font-bold bg-green-100 text-green-700">تم السداد</span>
+                ? `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 text-green-700">تم السداد</span>
                            ${lot.paymentDetails?.payerName ? `<div class="text-xs text-slate-500 mt-1">بواسطة: ${lot.paymentDetails.payerName}</div>` : ''}`
-                : `<span class="inline-block px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`
+                : `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`
             }
                 </td>
             </tr>
@@ -2084,13 +2134,24 @@ const App: React.FC = () => {
 
                 <section class="mb-8">
                     <div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-xl">
-                        <div class="flex justify-between items-center">
-                            <div>
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
                                 <h2 class="text-3xl font-black mb-2">${entity.name}</h2>
-                                ${entity.buyerName ? `<p class="text-lg text-white/90">المشتري: ${entity.buyerName}</p>` : ''}
-                                <p class="text-sm text-white/80 mt-1">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
+                                ${entity.buyerName ? `<p class="text-lg text-white/90 mb-2">المشتري: ${entity.buyerName}</p>` : ''}
+                                <div class="flex flex-col gap-1">
+                                    <p class="text-sm text-white/80">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
+                                    ${(() => {
+                if (entity.auctionDate && typeof entity.auctionDate.toMillis === 'function') {
+                    const deadlineDate = new Date(entity.auctionDate.toMillis());
+                    deadlineDate.setDate(deadlineDate.getDate() + 15);
+                    const allPaid = activeLots.every(l => l.is70Paid);
+                    return `<p class="text-base font-bold ${allPaid ? 'text-green-300' : 'text-amber-300'} mt-1">آخر ميعاد للدفع: ${allPaid ? 'تم السداد ✓' : formatDate(Timestamp.fromDate(deadlineDate))}</p>`;
+                }
+                return '';
+            })()}
+                                </div>
                             </div>
-                            <div class="text-center">
+                            <div class="text-center bg-white/10 rounded-lg px-6 py-4">
                                 <div class="text-sm text-white/70 uppercase mb-1">عدد اللوطات</div>
                                 <div class="text-5xl font-black">${activeLots.length}</div>
                             </div>
@@ -2099,43 +2160,23 @@ const App: React.FC = () => {
                 </section>
 
                 <section class="mb-8">
-                    <div class="grid grid-cols-5 gap-4">
-                        <div class="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">إجمالي القيمة</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(entityTotal)}">${formatCurrency(entityTotal)}</div>
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-blue-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">إجمالي القيمة</div>
+                            <div class="text-3xl font-black text-blue-700" dir="ltr">${formatCurrency(entityTotal)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">قيمة 30%</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(entity30)}">${formatCurrency(entity30)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-purple-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">قيمة 30%</div>
+                            <div class="text-3xl font-black text-purple-700" dir="ltr">${formatCurrency(entity30)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-orange-500 to-red-600 rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">قيمة 70%</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(entity70)}">${formatCurrency(entity70)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 border-orange-500">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">قيمة 70%</div>
+                            <div class="text-3xl font-black text-orange-700" dir="ltr">${formatCurrency(entity70)}</div>
                         </div>
-                        <div class="bg-gradient-to-br from-${entityRemaining > 0 ? 'red-500 to-rose-600' : 'green-500 to-emerald-600'} rounded-xl p-4 text-white shadow-xl">
-                            <div class="text-[10px] uppercase font-bold text-white/80 mb-1">المتبقي</div>
-                            <div class="text-lg md:text-2xl font-black truncate" dir="ltr" title="${formatCurrency(entityRemaining)}">${formatCurrency(entityRemaining)}</div>
+                        <div class="bg-white rounded-lg p-6 shadow-lg border-r-4 ${entityRemaining > 0 ? 'border-red-500' : 'border-green-500'}">
+                            <div class="text-xs text-slate-500 font-bold uppercase mb-2">المتبقي</div>
+                            <div class="text-3xl font-black ${entityRemaining > 0 ? 'text-red-700' : 'text-green-700'}" dir="ltr">${formatCurrency(entityRemaining)}</div>
                         </div>
-                        ${(() => {
-                if (entity.auctionDate && typeof entity.auctionDate.toMillis === 'function') {
-                    const deadlineDate = new Date(entity.auctionDate.toMillis());
-                    deadlineDate.setDate(deadlineDate.getDate() + 15);
-                    const allPaid = activeLots.every(l => l.is70Paid);
-                    return `
-                                    <div class="bg-gradient-to-br from-${allPaid ? 'green-500 to-emerald-600' : 'amber-500 to-orange-600'} rounded-xl p-4 text-white shadow-xl">
-                                        <div class="text-[10px] uppercase font-bold text-white/80 mb-1">آخر ميعاد للدفع</div>
-                                        <div class="text-sm md:text-lg font-black">${allPaid ? 'تم السداد' : formatDate(Timestamp.fromDate(deadlineDate))}</div>
-                                    </div>
-                                `;
-                } else {
-                    return `
-                                    <div class="bg-gradient-to-br from-gray-400 to-gray-500 rounded-xl p-4 text-white shadow-xl">
-                                        <div class="text-[10px] uppercase font-bold text-white/80 mb-1">آخر ميعاد للدفع</div>
-                                        <div class="text-lg md:text-2xl font-black">لا يوجد</div>
-                                    </div>
-                                `;
-                }
-            })()}
                     </div>
                 </section>
 
@@ -2162,6 +2203,37 @@ const App: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    ${(() => {
+                const lotsWithImages = activeLots.filter(lot => lot.contractImage && lot.contractImage.url);
+                if (lotsWithImages.length === 0) return '';
+
+                return `
+                            <div class="mt-6">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
+                                    <h4 class="text-lg font-bold text-slate-800">صور العقود المرفقة</h4>
+                                </div>
+                                <div class="grid grid-cols-3 gap-4">
+                                    ${lotsWithImages.map(lot => `
+                                        <div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                            <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                                                <img 
+                                                    src="${getDirectImageUrl(lot.contractImage.url)}"
+                                                    alt="عقد ${lot.name}"
+                                                    class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                                    onerror="this.style.display='none'"
+                                                    referrerpolicy="no-referrer"
+                                                    onclick="openImageModal(this.src, 'عقد ${lot.name}')"
+                                                />
+                                            </div>
+                                            <p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+            })()}
                 </section>
 
                 <footer class="mt-16 pt-8 border-t-2 border-slate-200 text-center text-slate-400 text-xs">
@@ -2267,7 +2339,8 @@ const App: React.FC = () => {
                                             alt="${item.name}"
                                             class="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
                                             onerror="this.style.display='none'"
-                                            onclick="openImageModal('${getDirectImageUrl(item.image.url)}', '${item.name}')"
+                                            referrerpolicy="no-referrer"
+                                            onclick="openImageModal(this.src, '${item.name}')"
                                         />
                                         <p class="text-center text-xs text-slate-500 mt-2 font-medium">${item.name}</p>
                                     </div>
@@ -2275,6 +2348,38 @@ const App: React.FC = () => {
                         </div>
                     </section>
                 ` : ''}
+                
+                <!-- Payment Receipt Images -->
+                ${(() => {
+                const transactionsWithReceipts = sortedTransactions.filter(t => t.amount < 0 && (t as any).receiptImage && (t as any).receiptImage.url);
+                if (transactionsWithReceipts.length === 0) return '';
+
+                return `
+                        <section class="mb-8 break-inside-avoid">
+                            <div class="flex items-center gap-2 mb-4">
+                                <div class="w-1 h-6 bg-green-600 rounded-full"></div>
+                                <h3 class="text-lg font-bold text-slate-800">صور إيصالات الدفع</h3>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4">
+                                ${transactionsWithReceipts.map(t => `
+                                    <div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition-shadow">
+                                        <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                                            <img 
+                                                src="${getDirectImageUrl((t as any).receiptImage.url)}"
+                                                alt="إيصال دفع"
+                                                class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                                onerror="this.style.display='none'"
+                                                referrerpolicy="no-referrer"
+                                                onclick="openImageModal(this.src, 'إيصال دفع')"
+                                            />
+                                        </div>
+                                        <p class="text-center text-xs text-slate-500 mt-2 font-semibold">${formatDate(t.date)} - ${formatCurrency(Math.abs(t.amount))}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </section>
+                    `;
+            })()}
                 
                 <footer class="mt-auto pt-8 border-t border-slate-100">
                     <div class="flex justify-end">
@@ -2304,6 +2409,104 @@ const App: React.FC = () => {
                 </footer>
             </div>
         `;
+    };
+
+    const generateAllClientsHTML = (clientsList: Client[], title: string, exportDate: string): string => {
+        const totalBalance = clientsList.reduce((sum, client) => {
+            const clientBalance = client.transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+            return sum + clientBalance;
+        }, 0);
+
+        const clientsHTML = clientsList.map(client => {
+            const balance = client.transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+            const lastTransaction = client.transactions.sort((a, b) => (b.date?.toMillis() || 0) - (a.date?.toMillis() || 0))[0];
+
+            return `
+                <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+                    <td class="p-4 text-slate-800 font-bold">${client.name}</td>
+                    <td class="p-4 text-slate-600 text-sm">${lastTransaction ? formatDate(lastTransaction.date) : '-'}</td>
+                    <td class="p-4 text-center font-bold font-mono text-sm ${balance >= 0 ? 'text-red-600' : 'text-green-600'}">
+                        ${formatCurrency(Math.abs(balance))} ${balance >= 0 ? '(مدين)' : '(دائن)'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="bg-white font-sans min-h-screen" dir="rtl" style="max-width: 297mm; margin: 0 auto; padding: 40px;">
+                <header class="mb-10 flex justify-between items-start border-b-2 border-slate-200 pb-8">
+                    <div>
+                        <div class="flex items-center gap-3 mb-2">
+                            <div class="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-700 rounded-lg flex items-center justify-center shadow-lg">
+                                <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v-2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.32-.42-.58-.5L20 10.62V6c0-1.1-.9-2-2-2h-3V1H9v3H6c-1.1 0-2 .9-2 2v4.62l-1.29.42c-.26.08-.46.26-.58.5s-.15.52-.06.78L3.95 19zM6 6h12v3.97L12 8 6 9.97V6z"/>
+                                </svg>
+                            </div>
+                            <h1 class="text-3xl font-black text-slate-900">العبارة للتجارة والتوريدات</h1>
+                        </div>
+                        <p class="text-slate-500 text-sm mr-14">إدارة المزادات والتوريدات العامة</p>
+                    </div>
+                    <div class="text-left">
+                        <span class="inline-block bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-bold px-4 py-2 rounded-lg mb-2 shadow-lg">
+                            ${title}
+                        </span>
+                        <p class="text-slate-400 text-xs font-medium">${exportDate}</p>
+                    </div>
+                </header>
+
+                <section class="mb-8">
+                    <div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-xl">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h2 class="text-3xl font-black mb-2">ملخص الحسابات</h2>
+                                <p class="text-lg text-white/90">عدد العملاء: ${clientsList.length}</p>
+                            </div>
+                            <div class="text-center bg-white/10 rounded-lg px-6 py-4">
+                                <div class="text-sm text-white/70 uppercase mb-1">إجمالي الرصيد</div>
+                                <div class="text-3xl font-black" dir="ltr">${formatCurrency(Math.abs(totalBalance))}</div>
+                                <div class="text-sm font-bold mt-1 ${totalBalance >= 0 ? 'text-red-200' : 'text-green-200'}">
+                                    ${totalBalance >= 0 ? '(مدين)' : '(دائن)'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden shadow-lg">
+                        <table class="w-full text-right">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+                                    <th class="p-4 text-xs font-bold uppercase">اسم العميل</th>
+                                    <th class="p-4 text-xs font-bold uppercase">آخر حركة</th>
+                                    <th class="p-4 text-xs font-bold uppercase text-center">الرصيد الحالي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${clientsHTML}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <footer class="mt-16 pt-8 border-t-2 border-slate-200 text-center text-slate-400 text-xs">
+                    <p class="font-medium">العبارة للتجارة والتوريدات © ${new Date().getFullYear()}</p>
+                    <p class="mt-1">تم إنشاء هذا المستند تلقائياً بواسطة نظام إدارة المزادات</p>
+                </footer>
+            </div>
+        `;
+    };
+
+    const exportAllAdvanceClients = () => {
+        const exportDate = formatSpecificDateTime(Timestamp.now());
+        const html = generateAllClientsHTML(clients, 'حساب السلف', exportDate);
+        handlePrint(html);
+    };
+
+    const exportAllWorkClients = () => {
+        const exportDate = formatSpecificDateTime(Timestamp.now());
+        const html = generateAllClientsHTML(workClients, 'حساب الشغل', exportDate);
+        handlePrint(html);
     };
 
     const handleExportTransaction = (client: Client, transaction: Transaction) => {
@@ -2562,12 +2765,23 @@ const App: React.FC = () => {
                                         </div>
                                     )}
                                     {(viewMode === 'advances' || viewMode === 'work') && (
-                                        <button
-                                            onClick={() => setClientModalOpen(true)}
-                                            className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow"
-                                        >
-                                            + إضافة عميل {viewMode === 'advances' ? 'سلف' : 'شغل'}
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => viewMode === 'advances' ? exportAllAdvanceClients() : exportAllWorkClients()}
+                                                className="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-lg flex items-center gap-2"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                تصدير ملخص
+                                            </button>
+                                            <button
+                                                onClick={() => setClientModalOpen(true)}
+                                                className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-lg flex items-center gap-2"
+                                            >
+                                                + إضافة عميل {viewMode === 'advances' ? 'سلف' : 'شغل'}
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -3300,7 +3514,8 @@ const DashboardView: React.FC<{
 }> = ({ onNavigate, entities, clients, workClients }) => {
 
     const stats = useMemo(() => {
-        const entitiesCount = entities.length;
+        // Count only entities that have at least one active (non-archived) lot
+        const entitiesCount = entities.filter(e => e.lots?.some(l => !l.isArchived)).length;
         const activeLots = entities.reduce((sum, e) => sum + (e.lots?.filter(l => !l.isArchived).length || 0), 0);
 
         const advancesBalance = clients.reduce((sum, c) =>
