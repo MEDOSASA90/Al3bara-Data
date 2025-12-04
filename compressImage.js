@@ -1,5 +1,5 @@
 // compressImage.js
-export function compressImage(file, maxWidth = 1024, quality = 0.7) {
+export function compressImage(file, maxWidth = 800, quality = 0.5) {
   return new Promise((resolve, reject) => {
     if (!file || !(file instanceof File)) {
       return reject("Invalid file input");

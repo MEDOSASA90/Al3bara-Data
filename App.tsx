@@ -3946,7 +3946,7 @@ const TransactionModal: React.FC<{
 
         try {
             // 1) Compress the image
-            const compressedFile = await compressImage(file, 1280, 0.75);
+            const compressedFile = await compressImage(file);
 
             // 2) Convert to Base64
             const base64 = await toBase64(compressedFile);
@@ -3976,7 +3976,7 @@ const TransactionModal: React.FC<{
         setIsUploadingImage(true);
         try {
             // 1) Compress
-            const compressedFile = await compressImage(file, 1280, 0.75);
+            const compressedFile = await compressImage(file);
 
             // 2) Base64
             const base64 = await toBase64(compressedFile);
