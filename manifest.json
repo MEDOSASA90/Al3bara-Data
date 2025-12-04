@@ -1,0 +1,35 @@
+{
+  "name": "العبارة للتجارة والتوريدات",
+  "short_name": "العبارة",
+  "description": "نظام إدارة الحسابات والعملاء للعبارة للتجارة والتوريدات",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e40af",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["business", "finance", "productivity"],
+  "prefer_related_applications": false
+}
