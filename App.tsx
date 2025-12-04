@@ -300,33 +300,34 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
 };
 
 const Header: React.FC<{ user: User; onLogout: () => void }> = ({ user, onLogout }) => (
-    <header className="bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-white shadow-xl border-b border-slate-700">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-700 rounded-lg flex items-center justify-center shadow-lg">
-                    <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+    <header className="bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-white shadow-xl border-b border-slate-700 sticky top-0 z-50">
+        <div className="w-full max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-cyan-500 to-blue-700 rounded-lg flex items-center justify-center shadow-lg flex-shrink-0">
+                    <svg className="w-6 h-6 md:w-7 md:h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v-2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.32-.42-.58-.5L20 10.62V6c0-1.1-.9-2-2-2h-3V1H9v3H6c-1.1 0-2 .9-2 2v4.62l-1.29.42c-.26.08-.46.26-.58.5s-.15.52-.06.78L3.95 19zM6 6h12v3.97L12 8 6 9.97V6z" />
                     </svg>
                 </div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-                    العبارة للتجارة والتوريدات
+                <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent leading-tight">
+                    العبارة <span className="hidden xs:inline">للتجارة والتوريدات</span>
                 </h1>
             </div>
-            <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-slate-700/50 rounded-lg px-4 py-2 border border-slate-600">
-                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 md:gap-4">
+                <div className="hidden md:flex items-center gap-2 bg-slate-700/50 rounded-lg px-3 py-1.5 border border-slate-600">
+                    <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
-                    <span className="text-sm text-gray-300">{user.email}</span>
+                    <span className="text-xs md:text-sm text-gray-300 max-w-[150px] truncate" dir="ltr">{user.email}</span>
                 </div>
                 <button
                     onClick={onLogout}
-                    className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+                    className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold px-3 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+                    title="تسجيل الخروج"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
-                    <span className="text-sm">تسجيل الخروج</span>
+                    <span className="hidden md:inline text-sm">خروج</span>
                 </button>
             </div>
         </div>
@@ -341,7 +342,7 @@ const MetricCard: React.FC<{
     icon: string;
     subText?: string
 }> = ({ title, value, tag, gradient, icon, subText }) => (
-    <div className={`group relative bg-gradient-to-br ${gradient} rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden`}>
+    <div className={`group relative bg-gradient-to-br ${gradient} rounded-2xl p-4 md:p-6 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
         <div className="relative z-10">
             <div className="flex items-center justify-between mb-3">
@@ -745,7 +746,7 @@ const TransactionGroupItem: React.FC<{
         const amountColor = isPayment ? 'text-green-700' : 'text-gray-800';
 
         return (
-            <div key={t.id} className={`${transactionBgColor} p-3 rounded-md border`}>
+            <div key={t.id} className={`${transactionBgColor} p-2 md:p-3 rounded-md border`}>
                 <div className="flex justify-between items-start">
                     <div>
                         <p className={`font-bold text-lg ${amountColor}`} dir="ltr">{formatCurrency(t.amount)}</p>
@@ -808,7 +809,7 @@ const TransactionGroupItem: React.FC<{
     return (
         <div className={`${groupBgColor} rounded-md border overflow-hidden shadow-sm`}>
             <div
-                className="p-3 flex justify-between items-center cursor-pointer hover:bg-opacity-80 transition-colors"
+                className="p-2 md:p-3 flex justify-between items-center cursor-pointer hover:bg-opacity-80 transition-colors"
                 onClick={() => setExpanded(!expanded)}
             >
                 <div>
@@ -3069,7 +3070,7 @@ const ClientCard: React.FC<{
     }, [client.transactions]);
 
     return (
-        <div className={`p-4 rounded-lg shadow-md border ${client.isBuyer ? 'bg-purple-50 border-purple-200' : 'bg-white border-gray-200'}`}>
+        <div className={`p-3 md:p-4 rounded-lg shadow-md border ${client.isBuyer ? 'bg-purple-50 border-purple-200' : 'bg-white border-gray-200'}`}>
             <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                 <div
                     className="flex items-center gap-2 cursor-pointer group select-none"
@@ -3236,18 +3237,28 @@ const EntitiesView: React.FC<{
 
                     return (
                         <div key={entity.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                            <div className="p-4 flex justify-between items-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-3 md:p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4" onClick={(e) => e.stopPropagation()}>
                                 <div
-                                    className="flex-grow cursor-pointer"
+                                    className="flex-grow cursor-pointer w-full md:w-auto"
                                     onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
                                 >
-                                    <h3 className="text-lg font-bold text-blue-700">{entity.name}</h3>
-                                    {entity.buyerName && <p className="text-xs text-gray-600 mt-1">المشتري: {entity.buyerName}</p>}
-                                    <p className="text-sm text-gray-500">ميعاد الجلسة: {formatSpecificDateTime(entity.auctionDate)}</p>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-blue-700">{entity.name}</h3>
+                                            {entity.buyerName && <p className="text-xs text-gray-600 mt-1">المشتري: {entity.buyerName}</p>}
+                                            <p className="text-sm text-gray-500">ميعاد الجلسة: {formatSpecificDateTime(entity.auctionDate)}</p>
+                                        </div>
+                                        {/* Arrow for mobile only */}
+                                        <div className="md:hidden">
+                                            <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div
-                                    className="flex-shrink-0 mx-4 flex items-center gap-2"
+                                    className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {/* زر تم التحميل (نقل للأرشيف) */}
@@ -3257,7 +3268,7 @@ const EntitiesView: React.FC<{
                                             e.stopPropagation();
                                             onOpenLoadingModal(entity.id); // Open for whole entity
                                         }}
-                                        className="text-xs bg-teal-100 text-teal-700 font-semibold py-1 px-2 rounded-md hover:bg-teal-200"
+                                        className="text-xs bg-teal-100 text-teal-700 font-semibold py-1.5 px-3 rounded-md hover:bg-teal-200 flex-grow md:flex-grow-0 text-center"
                                     >
                                         تم التحميل
                                     </button>
@@ -3269,7 +3280,7 @@ const EntitiesView: React.FC<{
                                             e.stopPropagation();
                                             onOpenEntityModal(entity);
                                         }}
-                                        className="text-xs bg-gray-200 text-gray-700 font-semibold py-1 px-2 rounded-md hover:bg-gray-300"
+                                        className="text-xs bg-gray-200 text-gray-700 font-semibold py-1.5 px-3 rounded-md hover:bg-gray-300 flex-grow md:flex-grow-0 text-center"
                                     >
                                         تعديل
                                     </button>
@@ -3281,7 +3292,7 @@ const EntitiesView: React.FC<{
                                             e.stopPropagation();
                                             onExportEntity(entity);
                                         }}
-                                        className="text-xs bg-green-100 text-green-700 font-semibold py-1 px-2 rounded-md hover:bg-green-200 flex items-center gap-1"
+                                        className="text-xs bg-green-100 text-green-700 font-semibold py-1.5 px-3 rounded-md hover:bg-green-200 flex items-center justify-center gap-1 flex-grow md:flex-grow-0"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -3296,20 +3307,20 @@ const EntitiesView: React.FC<{
                                             e.stopPropagation();
                                             onDeleteEntity(entity.id);
                                         }}
-                                        className="text-xs bg-red-100 text-red-700 font-semibold py-1 px-2 rounded-md hover:bg-red-200"
+                                        className="text-xs bg-red-100 text-red-700 font-semibold py-1.5 px-3 rounded-md hover:bg-red-200 flex-grow md:flex-grow-0 text-center"
                                     >
                                         حذف
                                     </button>
-                                </div>
 
-                                {/* زر السهم */}
-                                <div
-                                    className="cursor-pointer"
-                                    onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
-                                >
-                                    <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                    </svg>
+                                    {/* زر السهم - Desktop */}
+                                    <div
+                                        className="cursor-pointer hidden md:block mr-2"
+                                        onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
+                                    >
+                                        <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
                                 </div>
                             </div>
 
