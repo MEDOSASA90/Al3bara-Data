@@ -2707,7 +2707,7 @@ const App: React.FC = () => {
         <>
             <div id="app-container" className="bg-gray-50 min-h-screen">
                 <Header user={user} onLogout={handleLogout} />
-                <main className="container mx-auto p-4 md:p-6">
+                <main className="w-full max-w-7xl mx-auto p-2 md:p-6">
 
 
 
@@ -3577,7 +3577,7 @@ const DashboardView: React.FC<{
                 <p className="text-gray-600">اختر القسم الذي تريد الوصول إليه</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
                 {cards.map(card => (
                     <button
                         key={card.id}
