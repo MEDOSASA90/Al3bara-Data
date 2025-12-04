@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Global RTL Support */
+* {
+  direction: rtl;
+}
+
+html,
+body {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Force RTL for all flex containers */
+.flex {
+  direction: rtl;
+}
+
+/* Ensure proper alignment for all text */
+p, h1, h2, h3, h4, h5, h6, span, div, label, button {
+  text-align: right;
+  direction: rtl;
+}
+
+/* Fix input fields */
+input, textarea, select {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Override any LTR directions except where explicitly needed */
+[dir="ltr"] {
+  direction: ltr !important;
+  text-align: left !important;
+}
