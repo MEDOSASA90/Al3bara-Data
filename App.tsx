@@ -752,6 +752,19 @@ const TransactionGroupItem: React.FC<{
                         <p className={`font-bold text-lg ${amountColor}`} dir="ltr">{formatCurrency(t.amount)}</p>
                         <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
                         {t.notes && <p className="text-sm text-gray-600 mt-1">ملاحظات: {t.notes}</p>}
+                        {t.image && (
+                            <a
+                                href={t.image.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline mt-1"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                عرض صورة الحركة
+                            </a>
+                        )}
                     </div>
                     <div className="flex items-center flex-wrap gap-2">
                         <button onClick={() => onOpenTransactionModal(client, t)} className="bg-blue-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-blue-600 transition-colors">تعديل</button>
@@ -850,6 +863,19 @@ const TransactionGroupItem: React.FC<{
                                 <div>
                                     <p className={`font-bold text-sm ${amtColor}`} dir="ltr">{formatCurrency(t.amount)}</p>
                                     {t.notes && <p className="text-xs text-gray-500">{t.notes}</p>}
+                                    {t.image && (
+                                        <a
+                                            href={t.image.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline mt-1"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            صورة
+                                        </a>
+                                    )}
                                 </div>
                                 <div className="flex gap-1">
                                     <button onClick={(e) => { e.stopPropagation(); onOpenTransactionModal(client, t) }} className="text-blue-600 hover:text-blue-800 text-xs px-1">تعديل</button>
@@ -987,6 +1013,51 @@ const App: React.FC = () => {
 
     }, [user]);
 
+    // --- Browser History API for Back Button Support ---
+
+    // Handle browser back/forward button
+    useEffect(() => {
+        const handlePopState = (event: PopStateEvent) => {
+            if (event.state && event.state.viewMode) {
+                setViewMode(event.state.viewMode);
+                // Close any open modals when navigating back
+                setTransactionModalOpen(false);
+                setClientModalOpen(false);
+                setEntityModalOpen(false);
+                setLotModalOpen(false);
+                setPaymentModalOpen(false);
+                setSupplyModalOpen(false);
+                setIsLoadingModalOpen(false);
+                setPredefinedItemModalOpen(false);
+                setPredefinedBuyerModalOpen(false);
+            } else {
+                // If no state, go back to dashboard
+                setViewMode('dashboard');
+            }
+        };
+
+        // Add event listener
+        window.addEventListener('popstate', handlePopState);
+
+        // Initialize with dashboard state if not already set
+        if (!window.history.state || !window.history.state.viewMode) {
+            window.history.replaceState({ viewMode: 'dashboard' }, '', '#dashboard');
+        }
+
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, []);
+
+    // Update history when viewMode changes
+    useEffect(() => {
+        // Only push state if we're not already at this state
+        const currentState = window.history.state;
+        if (!currentState || currentState.viewMode !== viewMode) {
+            window.history.pushState({ viewMode }, '', `#${viewMode}`);
+        }
+    }, [viewMode]);
+
     // --- Handlers ---
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -1107,7 +1178,8 @@ const App: React.FC = () => {
             date: Timestamp.fromDate(transactionData.date),
             isSettled: transactionData.isSettled,
             items: transactionData.items,
-            image: transactionData.image || undefined
+            // Only include image field if it exists (Firestore doesn't accept undefined)
+            ...(transactionData.image && { image: transactionData.image })
         };
 
         const updatedTransactions = editingTransaction
@@ -1367,10 +1439,9 @@ const App: React.FC = () => {
             totalValue: lotData.totalValue || 0,
             value30: lotData.value30 || 0,
             value70: (lotData.totalValue || 0) - (lotData.value30 || 0),
+            // Only include contractImage if it exists (Firestore doesn't accept undefined)
+            ...(lotData.contractImage && { contractImage: lotData.contractImage })
         };
-
-        // Always update contractImage field, even if it's null (to remove image)
-        newLotData.contractImage = lotData.contractImage ?? null;
 
         const updatedLots = editingLot
             ? entity.lots.map(l => l.id === editingLot.id ? { ...l, ...newLotData } : l)
@@ -4178,8 +4249,11 @@ const PaymentModal: React.FC<{
         if (receiptFile) {
             setIsUploading(true);
             try {
-                receiptImage = await onFileUpload(receiptFile, 'payment_receipt');
+                // Compress first
+                const compressedFile = await compressImage(receiptFile, 1024, 0.7);
+                receiptImage = await onFileUpload(compressedFile, 'payment_receipt');
             } catch (error) {
+                console.error(error);
                 alert('فشل رفع صورة الإيصال');
                 setIsUploading(false);
                 return;
@@ -4341,6 +4415,7 @@ const LotModal: React.FC<{
     const [value30, setValue30] = useState<number | ''>('');
     const [contractImageFile, setContractImageFile] = useState<File | null>(null);
     const [existingImage, setExistingImage] = useState<{ name: string, url: string } | undefined>(undefined);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (lot) {
@@ -4381,7 +4456,18 @@ const LotModal: React.FC<{
 
         let contractImage: { name: string, url: string } | undefined | null = existingImage;
         if (contractImageFile) {
-            contractImage = await onFileUpload(contractImageFile, 'lot_contract');
+            setIsUploading(true);
+            try {
+                // Compress first
+                const compressedFile = await compressImage(contractImageFile, 1024, 0.7);
+                contractImage = await onFileUpload(compressedFile, 'lot_contract');
+            } catch (error) {
+                console.error("Error uploading image:", error);
+                alert("فشل رفع صورة العقد");
+                setIsUploading(false);
+                return;
+            }
+            setIsUploading(false);
         }
 
         const quantityString = (typeof quantity === 'number') ? `${quantity} ${quantityType === 'weight' ? 'طن' : 'قطعة'}` : '';
@@ -4459,8 +4545,8 @@ const LotModal: React.FC<{
                 {existingImage && !contractImageFile && <a href={existingImage.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-400 hover:underline mt-2 inline-block">عرض الصورة الحالية</a>}
 
                 <div className="flex items-center gap-4 pt-4">
-                    <button type="submit" className="bg-green-600 text-white font-bold py-3 px-6 rounded-md hover:bg-green-700 transition-colors flex-grow">
-                        {lot ? 'حفظ' : 'إضافة اللوط'}
+                    <button type="submit" disabled={isUploading} className="bg-green-600 text-white font-bold py-3 px-6 rounded-md hover:bg-green-700 transition-colors flex-grow disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isUploading ? 'جاري الرفع...' : (lot ? 'حفظ' : 'إضافة اللوط')}
                     </button>
                     <button type="button" onClick={onClose} className="bg-gray-600 text-white py-3 px-6 rounded-md hover:bg-gray-500 transition-colors flex-grow">
                         إلغاء
