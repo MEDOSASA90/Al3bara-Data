@@ -2301,6 +2301,9 @@ const App: React.FC = () => {
                                                 </div>
                                                 <p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p>
                                                 <p class="text-center text-xs text-blue-600 mt-1 font-medium">↗ انقر للعرض بحجم كامل</p>
+                                                <p class="text-center text-xs text-gray-400 mt-1 break-all px-1" style="font-size: 7px; line-height: 1.2; word-break: break-all;">
+                                                    ${getDirectImageUrl(lot.contractImage.url)}
+                                                </p>
                                             </a>
                                         </div>
                                     `).join('')}
