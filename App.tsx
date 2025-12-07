@@ -2289,17 +2289,19 @@ const App: React.FC = () => {
                                 <div class="grid grid-cols-3 gap-4">
                                     ${lotsWithImages.map(lot => `
                                         <div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition-shadow">
-                                            <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
-                                                <img 
-                                                    src="${getDirectImageUrl(lot.contractImage.url)}"
-                                                    alt="عقد ${lot.name}"
-                                                    class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                                    onerror="this.style.display='none'"
-                                                    referrerpolicy="no-referrer"
-                                                    onclick="openImageModal(this.src, 'عقد ${lot.name}')"
-                                                />
-                                            </div>
-                                            <p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p>
+                                            <a href="${getDirectImageUrl(lot.contractImage.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: block;">
+                                                <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                                                    <img 
+                                                        src="${getDirectImageUrl(lot.contractImage.url)}"
+                                                        alt="عقد ${lot.name}"
+                                                        class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                                        onerror="this.style.display='none'"
+                                                        referrerpolicy="no-referrer"
+                                                    />
+                                                </div>
+                                                <p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p>
+                                                <p class="text-center text-xs text-blue-600 mt-1 font-medium">↗ انقر للعرض بحجم كامل</p>
+                                            </a>
                                         </div>
                                     `).join('')}
                                 </div>
