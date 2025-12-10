@@ -13,6 +13,7 @@ import {
     addDoc,
     deleteDoc,
     updateDoc,
+    deleteField,
     Timestamp,
     query,
     orderBy,
@@ -940,6 +941,11 @@ const App: React.FC = () => {
     const [clientToDelete, setClientToDelete] = useState<{ id: string; type: 'advance' | 'work' } | null>(null);
     const [lotToDelete, setLotToDelete] = useState<{ entityId: string; lotId: string } | null>(null);
     const [transactionToDelete, setTransactionToDelete] = useState<{ clientId: string; clientType: 'advance' | 'work'; transactionId: string } | null>(null);
+    const [settleTarget, setSettleTarget] = useState<{ client: Client; total: number } | null>(null);
+    const [isSettleModalOpen, setSettleModalOpen] = useState(false);
+    const [clientToRestore, setClientToRestore] = useState<Client | null>(null);
+    const [isRestoreModalOpen, setRestoreModalOpen] = useState(false);
+
 
 
     // --- Effects ---
@@ -1096,6 +1102,27 @@ const App: React.FC = () => {
         // FIX: Use Firebase v9 modular syntax for signOut.
         await signOut(auth);
     };
+
+    const addClient = async (name: string, phone: string | undefined, type: 'advance' | 'work') => {
+        if (!user) return;
+        const collectionName = type === 'advance' ? 'advanceClients' : 'workClients';
+
+        try {
+            const newClient = {
+                name: name.trim(),
+                phone: phone?.trim() || '',
+                transactions: [],
+                userId: user.uid
+            };
+
+            await addDoc(collection(db, collectionName), newClient);
+            setClientModalOpen(false);
+        } catch (error) {
+            console.error('Error adding client:', error);
+            alert('حدث خطأ أثناء إضافة العميل');
+        }
+    };
+
 
     const handleFileUpload = async (file: File | null, prefix: string): Promise<{ name: string; url: string } | undefined> => {
         if (!file) return undefined;
@@ -1626,6 +1653,7 @@ const App: React.FC = () => {
         }
     };
 
+
     const addPredefinedItem = async () => {
         if (!newPredefinedItemName.trim() || !user) return;
         try {
@@ -1906,6 +1934,32 @@ const App: React.FC = () => {
             </section>
         ` : '';
 
+        const transactionImageHTML = transaction.image && transaction.image.url ? `
+            <section class="mb-10 break-inside-avoid">
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-1 h-6 bg-purple-600 rounded-full"></div>
+                    <h3 class="text-lg font-bold text-slate-800">صورة الحركة</h3>
+                </div>
+                <div class="border border-slate-200 rounded-xl p-3 bg-white shadow-sm hover:shadow-md transition-shadow max-w-md mx-auto">
+                    <a href="${getDirectImageUrl(transaction.image.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: block;">
+                        <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                            <img 
+                                src="${getDirectImageUrl(transaction.image.url)}"
+                                alt="صورة الحركة"
+                                class="w-full h-48 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                onerror="this.style.display='none'"
+                                referrerpolicy="no-referrer"
+                            />
+                        </div>
+                        <p class="text-center text-xs text-blue-600 mt-2 font-medium">↗ انقر للعرض بحجم كامل</p>
+                        <p class="text-center text-xs text-gray-400 mt-1 break-all px-1" style="font-size: 7px; line-height: 1.2; word-break: break-all;">
+                            ${getDirectImageUrl(transaction.image.url)}
+                        </p>
+                    </a>
+                </div>
+            </section>
+        ` : '';
+
         return `
             <div class="bg-white font-sans min-h-screen flex flex-col" dir="rtl" style="max-width: 210mm; margin: 0 auto; padding: 40px;">
                 <header class="mb-10 flex justify-between items-start border-b-2 border-slate-100 pb-8">
@@ -1951,6 +2005,7 @@ const App: React.FC = () => {
                 ${itemsHTML}
                 ${notesHTML}
                 ${imagesHTML}
+                ${transactionImageHTML}
 
                 <footer class="mt-auto pt-8 border-t border-slate-100 flex flex-col items-center gap-2">
                     <div class="flex items-center gap-2 text-slate-400">
@@ -2401,56 +2456,79 @@ const App: React.FC = () => {
                     </div>
                 </section>
                 
-                <!-- Receipt Images -->
-                ${sortedTransactions.some(t => t.items?.some(item => item.image && item.image.url)) ? `
-                    <section class="mb-8 break-inside-avoid">
-                        <h3 class="text-lg font-bold text-slate-700 mb-3 border-r-4 border-slate-500 pr-3">الصور المرفقة</h3>
-                        <div class="grid grid-cols-3 gap-4">
-                            ${sortedTransactions
-                    .flatMap(t => t.items || [])
-                    .filter(item => item.image && item.image.url)
-                    .map(item => `
-                                    <div class="border border-slate-200 rounded-lg p-2 bg-white shadow-sm break-inside-avoid">
-                                        <img 
-                                            src="${getDirectImageUrl(item.image.url)}"
-                                            alt="${item.name}"
-                                            class="w-full h-32 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                            onerror="this.style.display='none'"
-                                            referrerpolicy="no-referrer"
-                                            onclick="openImageModal(this.src, '${item.name}')"
-                                        />
-                                        <p class="text-center text-xs text-slate-500 mt-2 font-medium">${item.name}</p>
-                                    </div>
-                                `).join('')}
-                        </div>
-                    </section>
-                ` : ''}
-                
-                <!-- Payment Receipt Images -->
+                <!-- All Images Section (Consolidated) -->
                 ${(() => {
-                const transactionsWithReceipts = sortedTransactions.filter(t => t.amount < 0 && (t as any).receiptImage && (t as any).receiptImage.url);
-                if (transactionsWithReceipts.length === 0) return '';
+                // Collect all images from different sources
+                const allImages = [];
+
+                // 1. Transaction images
+                sortedTransactions.forEach(t => {
+                    if (t.image && t.image.url) {
+                        allImages.push({
+                            url: t.image.url,
+                            label: `حركة - ${formatDate(t.date)}`,
+                            sublabel: formatCurrency(Math.abs(t.amount)),
+                            type: 'transaction'
+                        });
+                    }
+                });
+
+                // 2. Item images
+                sortedTransactions.forEach(t => {
+                    if (t.items && t.items.length > 0) {
+                        t.items.forEach(item => {
+                            if (item.image && item.image.url) {
+                                allImages.push({
+                                    url: item.image.url,
+                                    label: `صنف - ${item.name}`,
+                                    sublabel: formatDate(t.date),
+                                    type: 'item'
+                                });
+                            }
+                        });
+                    }
+                });
+
+                // 3. Receipt images
+                sortedTransactions.forEach(t => {
+                    if (t.amount < 0 && (t as any).receiptImage && (t as any).receiptImage.url) {
+                        allImages.push({
+                            url: (t as any).receiptImage.url,
+                            label: `إيصال دفع - ${formatDate(t.date)}`,
+                            sublabel: formatCurrency(Math.abs(t.amount)),
+                            type: 'receipt'
+                        });
+                    }
+                });
+
+                if (allImages.length === 0) return '';
 
                 return `
                         <section class="mb-8 break-inside-avoid">
                             <div class="flex items-center gap-2 mb-4">
-                                <div class="w-1 h-6 bg-green-600 rounded-full"></div>
-                                <h3 class="text-lg font-bold text-slate-800">صور إيصالات الدفع</h3>
+                                <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
+                                <h3 class="text-lg font-bold text-slate-800">جميع الصور المرفقة (${allImages.length})</h3>
                             </div>
                             <div class="grid grid-cols-3 gap-4">
-                                ${transactionsWithReceipts.map(t => `
+                                ${allImages.map(img => `
                                     <div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm hover:shadow-md transition-shadow">
-                                        <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
-                                            <img 
-                                                src="${getDirectImageUrl((t as any).receiptImage.url)}"
-                                                alt="إيصال دفع"
-                                                class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                                onerror="this.style.display='none'"
-                                                referrerpolicy="no-referrer"
-                                                onclick="openImageModal(this.src, 'إيصال دفع')"
-                                            />
-                                        </div>
-                                        <p class="text-center text-xs text-slate-500 mt-2 font-semibold">${formatDate(t.date)} - ${formatCurrency(Math.abs(t.amount))}</p>
+                                        <a href="${getDirectImageUrl(img.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: block;">
+                                            <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
+                                                <img 
+                                                    src="${getDirectImageUrl(img.url)}"
+                                                    alt="${img.label}"
+                                                    class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                                    onerror="this.style.display='none'"
+                                                    referrerpolicy="no-referrer"
+                                                />
+                                            </div>
+                                            <p class="text-center text-xs text-slate-700 mt-2 font-semibold">${img.label}</p>
+                                            <p class="text-center text-xs text-slate-500 mt-0.5">${img.sublabel}</p>
+                                            <p class="text-center text-xs text-blue-600 mt-1 font-medium">↗ انقر للعرض بحجم كامل</p>
+                                            <p class="text-center text-xs text-gray-400 mt-1 break-all px-1" style="font-size: 7px; line-height: 1.2; word-break: break-all;">
+                                                ${getDirectImageUrl(img.url)}
+                                            </p>
+                                        </a>
                                     </div>
                                 `).join('')}
                             </div>
@@ -2586,6 +2664,114 @@ const App: React.FC = () => {
         handlePrint(html);
     };
 
+
+    const handleSettleClient = (client: Client, total: number) => {
+        setSettleTarget({ client, total });
+        setSettleModalOpen(true);
+    };
+
+    const confirmSettleAndArchive = async () => {
+        if (!settleTarget || !user) return;
+
+        const { client, total } = settleTarget;
+
+        // Determine which collection this client belongs to
+        const isAdvanceClient = clients.some(c => c.id === client.id);
+        const isWorkClient = workClients.some(c => c.id === client.id);
+
+        let collectionName: string;
+        let archiveType: 'entities' | 'work' | 'advances';
+
+        if (isAdvanceClient) {
+            collectionName = 'advanceClients';
+            archiveType = 'advances';
+        } else if (isWorkClient) {
+            collectionName = 'workClients';
+            archiveType = 'work';
+        } else {
+            // This shouldn't happen, but handle it gracefully
+            alert('خطأ: لم يتم العثور على العميل في أي قائمة');
+            setSettleModalOpen(false);
+            setSettleTarget(null);
+            return;
+        }
+
+        try {
+            const clientRef = doc(db, collectionName, client.id);
+
+            // Create a balancing transaction to zero out the account
+            const balancingTransaction: Transaction = {
+                id: `settle_${Date.now()}`,
+                amount: -total, // Opposite of current balance to zero it out
+                notes: `تسوية نهائية - تم التسديد بالكامل`,
+                date: Timestamp.now(),
+                isSettled: true,
+                items: []
+            };
+
+            const updatedTransactions = [...client.transactions, balancingTransaction];
+
+            // Update client: add balancing transaction, mark as archived, set archive type
+            await updateDoc(clientRef, {
+                transactions: updatedTransactions,
+                isArchived: true,
+                archiveType: archiveType
+            });
+
+            setSettleModalOpen(false);
+            setSettleTarget(null);
+
+            alert(`تم تسوية حساب ${client.name} ونقله إلى أرشيف ${archiveType === 'advances' ? 'حساب السلف' : archiveType === 'work' ? 'حساب الشغل' : 'حساب الجهات'}`);
+        } catch (error) {
+            console.error('Error settling and archiving client:', error);
+            alert(`فشل في تسوية الحساب. الخطأ: ${error}`);
+        }
+    };
+
+    const handleRestoreClient = (client: Client) => {
+        setClientToRestore(client);
+        setRestoreModalOpen(true);
+    };
+
+    const confirmRestoreClient = async () => {
+        if (!clientToRestore || !user) return;
+
+        // Determine which collection this client belongs to
+        const isAdvanceClient = clients.some(c => c.id === clientToRestore.id);
+        const isWorkClient = workClients.some(c => c.id === clientToRestore.id);
+
+        let collectionName: string;
+
+        if (isAdvanceClient) {
+            collectionName = 'advanceClients';
+        } else if (isWorkClient) {
+            collectionName = 'workClients';
+        } else {
+            alert('خطأ: لم يتم العثور على العميل في أي قائمة');
+            setRestoreModalOpen(false);
+            setClientToRestore(null);
+            return;
+        }
+
+        try {
+            const clientRef = doc(db, collectionName, clientToRestore.id);
+
+            // Remove archive flags
+            await updateDoc(clientRef, {
+                isArchived: false,
+                archiveType: deleteField() // Remove the field completely
+            });
+
+            setRestoreModalOpen(false);
+            setClientToRestore(null);
+
+            alert(`تم استرجاع ${clientToRestore.name} من الأرشيف بنجاح`);
+        } catch (error) {
+            console.error('Error restoring client:', error);
+            alert(`فشل في استرجاع العميل. الخطأ: ${error}`);
+        }
+    };
+
     const handleExportTransaction = (client: Client, transaction: Transaction) => {
         const exportDate = formatSpecificDateTime(Timestamp.now());
         const html = generateTransactionHTML(client, transaction, exportDate);
@@ -2608,6 +2794,140 @@ const App: React.FC = () => {
     const handleExportSingleEntity = (entity: Entity) => {
         const exportDate = formatSpecificDateTime(Timestamp.now());
         const html = generateSingleEntityHTML(entity, exportDate);
+        handlePrint(html);
+    };
+
+    const handleExportAllClients = (clients: Client[], typeName: string) => {
+        const exportDate = formatSpecificDateTime(Timestamp.now());
+
+        const html = `
+            <!DOCTYPE html>
+            <html dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <title>تصدير جماعي - ${typeName}</title>
+                <style>
+                    body { font-family: 'Arial', sans-serif; direction: rtl; }
+                    .header { text-align: center; margin-bottom: 30px; }
+                    .client-section { page-break-after: always; margin-bottom: 40px; }
+                    .client-section:last-child { page-break-after: auto; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>تصدير جماعي - ${typeName}</h1>
+                    <p>تاريخ التصدير: ${exportDate}</p>
+                    <p>عدد العملاء: ${clients.length}</p>
+                </div>
+                ${clients.map((client, index) => `
+                    <div class="client-section">
+                        ${generateClientSummaryHTML(client, exportDate)}
+                    </div>
+                `).join('')}
+            </body>
+            </html>
+        `;
+
+        handlePrint(html);
+    };
+
+    const handleExportArchiveReport = () => {
+        const exportDate = formatSpecificDateTime(Timestamp.now());
+
+        const archivedAdvances = clients.filter(c => c.isArchived && c.archiveType === 'advances');
+        const archivedWork = workClients.filter(c => c.isArchived && c.archiveType === 'work');
+        const archivedLots = entities.reduce((sum, e) => sum + (e.lots?.filter(l => l.isArchived).length || 0), 0);
+
+        const html = `
+            <!DOCTYPE html>
+            <html dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <title>تقرير شامل للأرشيف</title>
+                <style>
+                    body { font-family: 'Arial', sans-serif; direction: rtl; padding: 20px; }
+                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+                    .stats { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                    .section { margin-bottom: 30px; }
+                    .section h2 { background: #333; color: white; padding: 10px; border-radius: 4px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                    th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+                    th { background: #666; color: white; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>📊 تقرير شامل للأرشيف</h1>
+                    <p>تاريخ التصدير: ${exportDate}</p>
+                </div>
+                
+                <div class="stats">
+                    <h2>الإحصائيات العامة</h2>
+                    <ul>
+                        <li>إجمالي عملاء السلف المؤرشفين: ${archivedAdvances.length}</li>
+                        <li>إجمالي عملاء الشغل المؤرشفين: ${archivedWork.length}</li>
+                        <li>إجمالي اللوطات المؤرشفة: ${archivedLots}</li>
+                        <li><strong>الإجمالي الكلي: ${archivedAdvances.length + archivedWork.length + archivedLots}</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="section">
+                    <h2>عملاء السلف المؤرشفين</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>اسم العميل</th>
+                                <th>الرصيد النهائي</th>
+                                <th>عدد الحركات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${archivedAdvances.map((client, index) => {
+            const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+            return `
+                                    <tr>
+                                        <td>${index + 1}</td>
+                                        <td>${client.name}</td>
+                                        <td>${formatCurrency(Math.abs(total))} ${total >= 0 ? '(مدين)' : '(دائن)'}</td>
+                                        <td>${client.transactions?.length || 0}</td>
+                                    </tr>
+                                `;
+        }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="section">
+                    <h2>عملاء الشغل المؤرشفين</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>اسم العميل</th>
+                                <th>الرصيد النهائي</th>
+                                <th>عدد الحركات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${archivedWork.map((client, index) => {
+            const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+            return `
+                                    <tr>
+                                        <td>${index + 1}</td>
+                                        <td>${client.name}</td>
+                                        <td>${formatCurrency(Math.abs(total))} ${total >= 0 ? '(مدين)' : '(دائن)'}</td>
+                                        <td>${client.transactions?.length || 0}</td>
+                                    </tr>
+                                `;
+        }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </body>
+            </html>
+        `;
+
         handlePrint(html);
     };
 
@@ -2754,8 +3074,8 @@ const App: React.FC = () => {
                 return <DashboardView
                     onNavigate={setViewMode}
                     entities={entities}
-                    clients={clients}
-                    workClients={workClients}
+                    clients={clients.filter(c => !c.isArchived)}
+                    workClients={workClients.filter(c => !c.isArchived)}
                 />;
             case 'entities':
                 return <EntitiesView
@@ -2770,10 +3090,60 @@ const App: React.FC = () => {
                     onExportEntity={handleExportSingleEntity}
                 />;
             case 'advances':
-                return <ClientsView type="advance" clients={clients} onOpenClientModal={() => setClientModalOpen(true)} onDeleteClient={openConfirmDeleteClientModal} onOpenTransactionModal={openTransactionModal} onOpenPaymentModal={openPaymentModal} onExportTransaction={handleExportTransaction} onDeleteTransaction={openConfirmDeleteTransactionModal} onExportSummary={handleExportClientSummary} />;
+                return <ClientsView
+                    type="advance"
+                    clients={clients.filter(c => !c.isArchived)}
+                    onOpenClientModal={() => setClientModalOpen(true)}
+                    onDeleteClient={openConfirmDeleteClientModal}
+                    onOpenTransactionModal={openTransactionModal}
+                    onOpenPaymentModal={openPaymentModal}
+                    onExportTransaction={handleExportTransaction}
+                    onDeleteTransaction={openConfirmDeleteTransactionModal}
+                    onExportSummary={handleExportClientSummary}
+                    onSettleClient={handleSettleClient}
+                />;
             case 'work':
-                return <ClientsView type="work" clients={workClients} onOpenClientModal={() => setClientModalOpen(true)} onDeleteClient={openConfirmDeleteClientModal} onOpenTransactionModal={openTransactionModal} onOpenPaymentModal={openPaymentModal} onExportTransaction={handleExportTransaction} onDeleteTransaction={openConfirmDeleteTransactionModal} onExportSummary={handleExportClientSummary} />;
-            case 'archive':
+                return <ClientsView
+                    type="work"
+                    clients={workClients.filter(c => !c.isArchived)}
+                    onOpenClientModal={() => setClientModalOpen(true)}
+                    onDeleteClient={openConfirmDeleteClientModal}
+                    onOpenTransactionModal={openTransactionModal}
+                    onOpenPaymentModal={openPaymentModal}
+                    onExportTransaction={handleExportTransaction}
+                    onDeleteTransaction={openConfirmDeleteTransactionModal}
+                    onExportSummary={handleExportClientSummary}
+                    onSettleClient={handleSettleClient}
+                />;
+            case 'archiveMenu':
+                return <ArchiveMenuView
+                    onNavigate={setViewMode}
+                    entities={entities}
+                    clients={clients}
+                    workClients={workClients}
+                    onExportReport={handleExportArchiveReport}
+                />;
+            case 'archiveAdvances':
+                return <ArchiveClientsView
+                    type="advance"
+                    clients={clients.filter(c => c.isArchived && c.archiveType === 'advances')}
+                    onOpenTransactionModal={openTransactionModal}
+                    onExportTransaction={handleExportTransaction}
+                    onExportSummary={handleExportClientSummary}
+                    onRestoreClient={handleRestoreClient}
+                    onExportAll={handleExportAllClients}
+                />;
+            case 'archiveWork':
+                return <ArchiveClientsView
+                    type="work"
+                    clients={workClients.filter(c => c.isArchived && c.archiveType === 'work')}
+                    onOpenTransactionModal={openTransactionModal}
+                    onExportTransaction={handleExportTransaction}
+                    onExportSummary={handleExportClientSummary}
+                    onRestoreClient={handleRestoreClient}
+                    onExportAll={handleExportAllClients}
+                />;
+            case 'archiveEntities':
                 return <ArchiveView entities={entities} onToggleArchive={toggleLotArchive} />;
             default:
                 return null;
@@ -2816,7 +3186,10 @@ const App: React.FC = () => {
                                                 'entities': 'حساب الجهات',
                                                 'advances': 'حساب السلف',
                                                 'work': 'حساب الشغل',
-                                                'archive': 'الأرشيف',
+                                                'archiveMenu': 'الأرشيف',
+                                                'archiveEntities': 'أرشيف حساب الجهات',
+                                                'archiveWork': 'أرشيف حساب الشغل',
+                                                'archiveAdvances': 'أرشيف حساب السلف',
                                             }[viewMode]
                                         }
                                     </h2>
@@ -3100,7 +3473,89 @@ const App: React.FC = () => {
                         </div>
                     </Modal>
                 )}
-            </div>
+
+                {isSettleModalOpen && settleTarget && (
+                    <Modal
+                        isOpen={isSettleModalOpen}
+                        onClose={() => setSettleModalOpen(false)}
+                        title="تأكيد تسوية الحساب"
+                    >
+                        <div className="text-center">
+                            <p className="text-lg text-gray-700 mb-4">
+                                هل أنت متأكد من تسوية الحساب للعميل <strong>{settleTarget.client.name}</strong> بالكامل؟
+                            </p>
+                            <p className="text-md text-gray-600 mb-2">
+                                المبلغ المتبقي: <span dir="ltr" className="font-bold">{formatCurrency(Math.abs(settleTarget.total))}</span> {settleTarget.total >= 0 ? '(مدين)' : '(دائن)'}
+                            </p>
+                            <p className="text-sm text-red-600 font-semibold mt-4">
+                                سيتم إضافة حركة تصفية ونقل العميل إلى الأرشيف.
+                            </p>
+                            <div className="mt-6 flex justify-center gap-4">
+                                <button
+                                    onClick={() => setSettleModalOpen(false)}
+                                    className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                                >
+                                    إلغاء
+                                </button>
+                                <button
+                                    onClick={confirmSettleAndArchive}
+                                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                                >
+                                    تأكيد وتسوية
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+                )}
+
+                {isRestoreModalOpen && clientToRestore && (
+                    <Modal
+                        isOpen={isRestoreModalOpen}
+                        onClose={() => setRestoreModalOpen(false)}
+                        title="تأكيد استرجاع من الأرشيف"
+                    >
+                        <div className="text-center">
+                            <p className="text-lg text-gray-700 mb-4">
+                                هل أنت متأكد من استرجاع <strong>{clientToRestore.name}</strong> من الأرشيف؟
+                            </p>
+                            <p className="text-sm text-blue-600 font-semibold mt-4">
+                                سيتم إعادة العميل إلى القائمة الرئيسية ({clientToRestore.archiveType === 'advances' ? 'حساب السلف' : 'حساب الشغل'}).
+                            </p>
+                            <div className="mt-6 flex justify-center gap-4">
+                                <button
+                                    onClick={confirmRestoreClient}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                                >
+                                    تأكيد الاسترجاع
+                                </button>
+                                <button
+                                    onClick={() => setRestoreModalOpen(false)}
+                                    className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+                                >
+                                    إلغاء
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+                )}
+
+
+                {/* Client Modal */}
+                {
+                    isClientModalOpen && (
+                        <ClientModal
+                            isOpen={isClientModalOpen}
+                            onClose={() => setClientModalOpen(false)}
+                            onSave={(name, phone) => {
+                                const clientType = viewMode === 'advances' ? 'advance' : 'work';
+                                addClient(name, phone, clientType);
+                            }}
+                            clientType={viewMode === 'advances' ? 'سلف' : 'شغل'}
+                            existingClients={viewMode === 'advances' ? clients : workClients}
+                        />
+                    )
+                }
+            </div >
         </>
     );
 };
@@ -3118,7 +3573,8 @@ const ClientCard: React.FC<{
     onExportTransaction: (client: Client, transaction: Transaction) => void;
     onDeleteTransaction: (clientId: string, clientType: 'advance' | 'work', transactionId: string) => void;
     onExportSummary: (client: Client) => void;
-}> = ({ client, type, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary }) => {
+    onSettleClient: (client: Client, total: number) => void;
+}> = ({ client, type, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary, onSettleClient }) => {
 
     const [isExpanded, setIsExpanded] = useState(true);
     const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -3193,7 +3649,18 @@ const ClientCard: React.FC<{
                         )}
                     </div>
 
-                    <div className="mt-4 pt-4 border-t flex justify-end">
+                    <div className="mt-4 pt-4 border-t flex justify-end items-center gap-4 flex-wrap">
+                        {Math.abs(total) > 0 && (
+                            <button
+                                onClick={() => onSettleClient(client, total)}
+                                className="bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                تم التسديد بالكامل
+                            </button>
+                        )}
                         <BalanceDisplay total={total} />
                     </div>
                 </>
@@ -3219,7 +3686,8 @@ const ClientsView: React.FC<{
     onExportTransaction: (client: Client, transaction: Transaction) => void;
     onDeleteTransaction: (clientId: string, clientType: 'advance' | 'work', transactionId: string) => void;
     onExportSummary: (client: Client) => void;
-}> = ({ type, clients, onOpenClientModal, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary }) => {
+    onSettleClient: (client: Client, total: number) => void;
+}> = ({ type, clients, onOpenClientModal, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary, onSettleClient }) => {
 
     if (!clients || clients.length === 0) {
         return (
@@ -3248,6 +3716,7 @@ const ClientsView: React.FC<{
                         onExportTransaction={onExportTransaction}
                         onDeleteTransaction={onDeleteTransaction}
                         onExportSummary={onExportSummary}
+                        onSettleClient={onSettleClient}
                     />
                 ))}
             </div>
@@ -3537,6 +4006,182 @@ const EntitiesView: React.FC<{
 };
 
 
+const ArchiveClientsView: React.FC<{
+    type: 'advance' | 'work';
+    clients: Client[];
+    onOpenTransactionModal: (client: Client, transaction?: Transaction) => void;
+    onExportTransaction: (client: Client, transaction: Transaction) => void;
+    onExportSummary: (client: Client) => void;
+    onRestoreClient: (client: Client) => void;
+    onExportAll: (clients: Client[], type: string) => void;
+}> = ({ type, clients, onOpenTransactionModal, onExportTransaction, onExportSummary, onRestoreClient, onExportAll }) => {
+
+    const [searchTerm, setSearchTerm] = React.useState('');
+    const [filterType, setFilterType] = React.useState<'all' | 'debit' | 'credit'>('all');
+
+    // Filter clients based on search and filter
+    const filteredClients = React.useMemo(() => {
+        return clients.filter(client => {
+            // Search by name
+            const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+            // Filter by balance type
+            const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+            const matchesFilter =
+                filterType === 'all' ||
+                (filterType === 'debit' && total >= 0) ||
+                (filterType === 'credit' && total < 0);
+
+            return matchesSearch && matchesFilter;
+        });
+    }, [clients, searchTerm, filterType]);
+
+    if (!clients || clients.length === 0) {
+        return (
+            <div className="text-center py-12">
+                <div className="text-6xl mb-4">📭</div>
+                <p className="text-gray-500 text-lg">لا يوجد عملاء مؤرشفين في هذا القسم</p>
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <div className="bg-gradient-to-r from-slate-500 to-gray-600 text-white p-6 rounded-lg shadow-lg mb-6">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold mb-2">العملاء المؤرشفين</h2>
+                        <p className="text-slate-200">إجمالي: {clients.length} عميل مؤرشف | معروض: {filteredClients.length}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onExportAll(clients, type === 'advance' ? 'حساب السلف' : 'حساب الشغل')}
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg shadow transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            تصدير الكل ({clients.length})
+                        </button>
+                        <div className="text-5xl">🗄️</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Search and Filter */}
+            <div className="mb-6 flex gap-4 flex-wrap">
+                <input
+                    type="text"
+                    placeholder="🔍 ابحث بالاسم..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+
+                <select
+                    value={filterType}
+                    onChange={(e) => setFilterType(e.target.value as 'all' | 'debit' | 'credit')}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                    <option value="all">الكل</option>
+                    <option value="debit">مدين فقط</option>
+                    <option value="credit">دائن فقط</option>
+                </select>
+            </div>
+
+            {/* Archived Clients List */}
+            <div className="space-y-6">
+                {filteredClients.map(client => {
+                    const [isExpanded, setIsExpanded] = React.useState(false);
+                    const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+
+                    // Group transactions by date
+                    const groupedTransactions = React.useMemo(() => {
+                        const grouped: { [key: string]: Transaction[] } = {};
+                        (client.transactions || []).forEach(t => {
+                            if (!t.date || typeof t.date.toDate !== 'function') return;
+
+                            const date = t.date.toDate();
+                            const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+                            if (!grouped[key]) grouped[key] = [];
+                            grouped[key].push(t);
+                        });
+
+                        return Object.entries(grouped).sort((a, b) => {
+                            const dateA = a[1][0].date ? a[1][0].date.toMillis() : 0;
+                            const dateB = b[1][0].date ? b[1][0].date.toMillis() : 0;
+                            return dateB - dateA;
+                        });
+                    }, [client.transactions]);
+
+                    return (
+                        <div key={client.id} className="p-4 rounded-lg shadow-md border bg-slate-50 border-slate-300">
+                            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                                <div
+                                    className="flex items-center gap-2 cursor-pointer group select-none"
+                                    onClick={() => setIsExpanded(!isExpanded)}
+                                >
+                                    <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500 group-hover:text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-800">{client.name}</h3>
+                                    <span className="bg-slate-300 text-slate-700 text-xs px-2 py-1 rounded-full font-bold border border-slate-400">
+                                        مؤرشف
+                                    </span>
+                                </div>
+                                <div className="flex items-center flex-wrap gap-2">
+                                    <button
+                                        onClick={() => onRestoreClient(client)}
+                                        className="text-sm bg-blue-600 text-white font-semibold py-1 px-3 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                        </svg>
+                                        استرجاع
+                                    </button>
+                                    <button onClick={() => onExportSummary(client)} className="text-sm bg-teal-600 text-white font-semibold py-1 px-3 rounded-lg hover:bg-teal-700 transition-colors">تصدير ملخص</button>
+                                </div>
+                            </div>
+
+                            {/* Transactions List */}
+                            {isExpanded && (
+                                <>
+                                    <div className="space-y-3">
+                                        {groupedTransactions.length > 0 ? (
+                                            groupedTransactions.map(([dateKey, transactions]) => (
+                                                <TransactionGroupItem
+                                                    key={dateKey}
+                                                    transactions={transactions}
+                                                    client={client}
+                                                    clientType={type}
+                                                    onOpenTransactionModal={onOpenTransactionModal}
+                                                    onDeleteTransaction={() => { }} // No delete in archive
+                                                    onExportTransaction={onExportTransaction}
+                                                />
+                                            ))
+                                        ) : (
+                                            <p className="text-sm text-center text-gray-500 py-4">لا توجد حركات مسجلة.</p>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t flex justify-end items-center gap-4">
+                                        <div className={`px-6 py-3 rounded-lg font-bold text-lg ${total >= 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                                            الرصيد النهائي: <span dir="ltr">{formatCurrency(Math.abs(total))}</span> {total >= 0 ? '(مدين)' : '(دائن)'}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
+
 const ArchiveView: React.FC<{
     entities: Entity[];
     onToggleArchive: (lot: Lot, entityId: string) => void;
@@ -3614,8 +4259,11 @@ const DashboardView: React.FC<{
         );
 
         const archivedLots = entities.reduce((sum, e) => sum + (e.lots?.filter(l => l.isArchived).length || 0), 0);
+        const archivedAdvances = clients.filter(c => c.isArchived && c.archiveType === 'advances').length;
+        const archivedWork = workClients.filter(c => c.isArchived && c.archiveType === 'work').length;
+        const totalArchivedClients = archivedAdvances + archivedWork;
 
-        return { entitiesCount, activeLots, advancesBalance, workBalance, archivedLots };
+        return { entitiesCount, activeLots, advancesBalance, workBalance, archivedLots, archivedAdvances, archivedWork, totalArchivedClients };
     }, [entities, clients, workClients]);
 
     const cards = [
@@ -3647,13 +4295,13 @@ const DashboardView: React.FC<{
             subStat: `${clients.length} عميل`
         },
         {
-            id: 'archive' as ViewMode,
+            id: 'archiveMenu' as ViewMode,
             title: 'الأرشيف',
             icon: '📦',
             gradient: 'from-gray-500 to-slate-600',
             hoverGradient: 'hover:from-gray-600 hover:to-slate-700',
-            stat: `${stats.archivedLots} لوط`,
-            subStat: 'مؤرشف'
+            stat: `${stats.totalArchivedClients + stats.archivedLots}`,
+            subStat: `${stats.totalArchivedClients} عميل + ${stats.archivedLots} لوط`
         }
     ];
 
@@ -3666,6 +4314,104 @@ const DashboardView: React.FC<{
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
                 {cards.map(card => (
+                    <button
+                        key={card.id}
+                        onClick={() => onNavigate(card.id)}
+                        className={`relative overflow-hidden rounded-2xl shadow-xl transition-all duration-300 transform hover:scale-105 hover:shadow-2xl p-8 text-white bg-gradient-to-br ${card.gradient} ${card.hoverGradient} group`}
+                    >
+                        {/* Glassmorphism overlay */}
+                        <div className="absolute inset-0 bg-white/10 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                        <div className="relative z-10">
+                            <div className="flex items-center justify-between mb-6">
+                                <span className="text-6xl">{card.icon}</span>
+                                <svg className="w-8 h-8 transform group-hover:translate-x-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                            </div>
+
+                            <h2 className="text-2xl font-bold mb-4">{card.title}</h2>
+
+                            <div className="space-y-2">
+                                <p className="text-3xl font-black" dir="ltr">{card.stat}</p>
+                                <p className="text-sm opacity-90">{card.subStat}</p>
+                            </div>
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const ArchiveMenuView: React.FC<{
+    onNavigate: (view: ViewMode) => void;
+    entities: Entity[];
+    clients: Client[];
+    workClients: Client[];
+    onExportReport: () => void;
+}> = ({ onNavigate, entities, clients, workClients, onExportReport }) => {
+
+    const stats = useMemo(() => {
+        const archivedLots = entities.reduce((sum, e) => sum + (e.lots?.filter(l => l.isArchived).length || 0), 0);
+        const archivedAdvances = clients.filter(c => c.isArchived && c.archiveType === 'advances').length;
+        const archivedWork = workClients.filter(c => c.isArchived && c.archiveType === 'work').length;
+
+        return { archivedLots, archivedAdvances, archivedWork };
+    }, [entities, clients, workClients]);
+
+    const archiveCards = [
+        {
+            id: 'archiveEntities' as ViewMode,
+            title: 'أرشيف حساب الجهات',
+            icon: '🏛️',
+            gradient: 'from-blue-500 to-cyan-500',
+            hoverGradient: 'hover:from-blue-600 hover:to-cyan-600',
+            stat: `${stats.archivedLots} لوط`,
+            subStat: 'مؤرشف'
+        },
+        {
+            id: 'archiveWork' as ViewMode,
+            title: 'أرشيف حساب الشغل',
+            icon: '📋',
+            gradient: 'from-purple-500 to-pink-500',
+            hoverGradient: 'hover:from-purple-600 hover:to-pink-600',
+            stat: `${stats.archivedWork} عميل`,
+            subStat: 'مؤرشف'
+        },
+        {
+            id: 'archiveAdvances' as ViewMode,
+            title: 'أرشيف حساب السلف',
+            icon: '💼',
+            gradient: 'from-orange-500 to-red-500',
+            hoverGradient: 'hover:from-orange-600 hover:to-red-600',
+            stat: `${stats.archivedAdvances} عميل`,
+            subStat: 'مؤرشف'
+        }
+    ];
+
+    return (
+        <div className="py-8">
+            <div className="text-center mb-8">
+                <h1 className="text-4xl font-bold text-gray-800 mb-3">الأرشيف</h1>
+                <p className="text-gray-600">اختر نوع الأرشيف الذي تريد عرضه</p>
+            </div>
+
+            {/* Comprehensive Report Button */}
+            <div className="mb-8 flex justify-center">
+                <button
+                    onClick={onExportReport}
+                    className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all flex items-center gap-2"
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    📊 تصدير تقرير شامل للأرشيف
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                {archiveCards.map(card => (
                     <button
                         key={card.id}
                         onClick={() => onNavigate(card.id)}
@@ -3922,30 +4668,230 @@ const LoadingModal: React.FC<{
 const ClientModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    onSave: (name: string) => void;
+    onSave: (name: string, phone?: string) => void;
     clientType: 'سلف' | 'شغل';
-}> = ({ isOpen, onClose, onSave, clientType }) => {
+    existingClients: Client[];
+}> = ({ isOpen, onClose, onSave, clientType, existingClients }) => {
+    const [mode, setMode] = useState<'select' | 'new'>('select');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedClientId, setSelectedClientId] = useState<string>('');
     const [name, setName] = useState('');
+    const [phoneNumbers, setPhoneNumbers] = useState<string[]>(['']);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    // Filter clients based on search query
+    const filteredClients = (existingClients || []).filter(client =>
+        client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (client.phone && client.phone.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const handleClientSelection = (value: string) => {
+        if (value === 'new') {
+            setMode('new');
+            setSelectedClientId('');
+        } else {
+            setMode('select');
+            setSelectedClientId(value);
+            setShowSuggestions(false);
+        }
+    };
+
+    const handleSearchChange = (value: string) => {
+        setSearchQuery(value);
+        if (value && mode === 'select') {
+            setShowSuggestions(true);
+        } else {
+            setShowSuggestions(false);
+        }
+    };
+
+    const handleSuggestionClick = (client: Client) => {
+        setSelectedClientId(client.id);
+        setSearchQuery(client.name);
+        setMode('select');
+        setShowSuggestions(false);
+    };
+
+    const addPhoneNumber = () => {
+        setPhoneNumbers([...phoneNumbers, '']);
+    };
+
+    const removePhoneNumber = (index: number) => {
+        setPhoneNumbers(phoneNumbers.filter((_, i) => i !== index));
+    };
+
+    const updatePhoneNumber = (index: number, value: string) => {
+        const updated = [...phoneNumbers];
+        updated[index] = value;
+        setPhoneNumbers(updated);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(name);
+
+        if (mode === 'select' && selectedClientId) {
+            const client = (existingClients || []).find(c => c.id === selectedClientId);
+            if (client) {
+                onSave(client.name, client.phone);
+            }
+        } else if (mode === 'new' && name.trim()) {
+            const validPhones = phoneNumbers.filter(p => p.trim() !== '');
+            const phoneString = validPhones.length > 0 ? validPhones.join(', ') : '';
+            onSave(name.trim(), phoneString);
+        }
+
+        // Reset form
         setName('');
+        setPhoneNumbers(['']);
+        setSearchQuery('');
+        setSelectedClientId('');
+        setMode('select');
+        onClose();
+    };
+
+    const handleClose = () => {
+        setName('');
+        setPhoneNumbers(['']);
+        setSearchQuery('');
+        setSelectedClientId('');
+        setMode('select');
+        onClose();
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`إضافة عميل ${clientType} جديد`}>
-            <form onSubmit={handleSubmit}>
-                <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="اسم العميل"
-                    className="w-full p-2 border rounded-md"
-                    required
-                />
-                <div className="mt-4 flex justify-end">
-                    <button type="submit" className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105">حفظ</button>
+        <Modal isOpen={isOpen} onClose={handleClose} title={`إضافة/اختيار عميل ${clientType}`}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Search Input */}
+                <div className="relative">
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => handleSearchChange(e.target.value)}
+                        placeholder="🔍 ابحث عن عميل بالاسم أو الهاتف..."
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-right"
+                    />
+
+                    {/* Autocomplete Suggestions */}
+                    {showSuggestions && filteredClients.length > 0 && searchQuery && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                            {filteredClients.slice(0, 5).map(client => (
+                                <div
+                                    key={client.id}
+                                    onClick={() => handleSuggestionClick(client)}
+                                    className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex justify-between items-center transition-colors"
+                                >
+                                    <div>
+                                        <p className="font-semibold text-gray-800">{client.name}</p>
+                                        {client.phone && <p className="text-xs text-gray-500">{client.phone}</p>}
+                                    </div>
+                                    {client.isArchived && (
+                                        <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded-full border border-orange-200 flex-shrink-0 mr-2">
+                                            مؤرشف
+                                        </span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Client Selection Dropdown */}
+                <div>
+                    <select
+                        value={mode === 'new' ? 'new' : selectedClientId}
+                        onChange={(e) => handleClientSelection(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    >
+                        <option value="">-- اختر عميل --</option>
+                        <option value="new" className="font-bold text-green-600">➕ إضافة عميل جديد</option>
+                        {filteredClients.length > 0 && (
+                            <optgroup label="العملاء الموجودين">
+                                {filteredClients.map(client => (
+                                    <option key={client.id} value={client.id}>
+                                        {client.name} {client.phone ? `- ${client.phone}` : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                    </select>
+                </div>
+
+                {/* New Client Form */}
+                {mode === 'new' && (
+                    <div className="space-y-4 pt-4 border-t border-gray-200">
+                        {/* Name Input */}
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">
+                                الاسم <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="اسم العميل"
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                required
+                            />
+                        </div>
+
+                        {/* Phone Numbers */}
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">
+                                أرقام الهاتف (اختياري)
+                            </label>
+                            <div className="space-y-2">
+                                {phoneNumbers.map((phone, index) => (
+                                    <div key={index} className="flex gap-2">
+                                        <input
+                                            type="tel"
+                                            value={phone}
+                                            onChange={(e) => updatePhoneNumber(index, e.target.value)}
+                                            placeholder="رقم الهاتف"
+                                            className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        />
+                                        {phoneNumbers.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removePhoneNumber(index)}
+                                                className="px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-bold text-lg"
+                                                title="حذف رقم الهاتف"
+                                            >
+                                                ×
+                                            </button>
+                                        )}
+                                        {index === phoneNumbers.length - 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={addPhoneNumber}
+                                                className="px-4 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-bold text-lg"
+                                                title="إضافة رقم هاتف آخر"
+                                            >
+                                                +
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                    <button
+                        type="submit"
+                        disabled={mode === 'select' ? !selectedClientId : !name.trim()}
+                        className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    >
+                        {mode === 'select' ? 'اختيار' : 'حفظ'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleClose}
+                        className="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                    >
+                        إلغاء
+                    </button>
                 </div>
             </form>
         </Modal>

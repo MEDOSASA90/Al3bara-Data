@@ -17,7 +17,16 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        // Add files individually to handle duplicates gracefully
+        return Promise.all(
+          urlsToCache.map((url) => {
+            return cache.add(url).catch((error) => {
+              console.log('Failed to cache:', url, error);
+              // Continue even if one file fails
+              return Promise.resolve();
+            });
+          })
+        );
       })
       .catch((error) => {
         console.log('Cache installation failed:', error);
@@ -35,24 +44,32 @@ self.addEventListener('fetch', (event) => {
         if (response) {
           return response;
         }
-        
+
         // Clone the request
         const fetchRequest = event.request.clone();
-        
+
         return fetch(fetchRequest).then((response) => {
           // Check if valid response
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
-          
+
           // Clone the response
           const responseToCache = response.clone();
-          
+
           caches.open(CACHE_NAME)
             .then((cache) => {
-              cache.put(event.request, responseToCache);
+              // Check if already cached to avoid duplicate error
+              cache.match(event.request).then((cachedResponse) => {
+                if (!cachedResponse) {
+                  cache.put(event.request, responseToCache);
+                }
+              });
+            })
+            .catch((error) => {
+              console.log('Cache put failed:', error);
             });
-          
+
           return response;
         });
       })

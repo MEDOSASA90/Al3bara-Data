@@ -1,7 +1,8 @@
 
 import type { Timestamp } from 'firebase/firestore';
 
-export type ViewMode = 'dashboard' | 'entities' | 'advances' | 'work' | 'archive';
+export type ViewMode = 'dashboard' | 'entities' | 'advances' | 'work' |
+    'archiveMenu' | 'archiveEntities' | 'archiveWork' | 'archiveAdvances';
 
 export interface FinancialSummary {
     totalDebit: number;
@@ -44,6 +45,9 @@ export interface Client {
     name: string;
     transactions: Transaction[];
     isBuyer?: boolean;
+    isArchived?: boolean;
+    archiveType?: 'entities' | 'work' | 'advances'; // Track which archive category
+    phone?: string; // Added phone field
 }
 
 export interface PaymentDetails {
