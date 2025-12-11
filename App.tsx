@@ -2444,6 +2444,7 @@ const App: React.FC = () => {
         `;
     };
 
+
     const generateClientSummaryHTML = (client: Client, exportDate: string): string => {
         const total = client.transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
         const sortedTransactions = [...client.transactions].sort((a, b) => {
@@ -3886,22 +3887,23 @@ const EntitiesView: React.FC<{
     const [expandedEntityId, setExpandedEntityId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    if (!entities || entities.length === 0) {
-        return <p className="text-center text-gray-500 py-8">لا توجد جهات لعرضها. ابدأ بإضافة جهة جديدة.</p>
-    }
+    // Calculate active lots entities
+    const activeLotsEntities = useMemo(() => {
+        if (!entities || entities.length === 0) return [];
 
-    const activeLotsEntities = entities
-        .filter(e => {
-            const hasActiveLots = (e.lots || []).some(l => !l.isArchived);
-            const hasNoLots = (e.lots || []).length === 0;
-            // Show if has active lots OR if completely empty (new entity)
-            // Hide if it has lots but all are archived
-            return hasActiveLots || hasNoLots;
-        })
-        .map(e => ({
-            ...e,
-            lots: (e.lots || []).filter(l => !l.isArchived)
-        }));
+        return entities
+            .filter(e => {
+                const hasActiveLots = (e.lots || []).some(l => !l.isArchived);
+                const hasNoLots = (e.lots || []).length === 0;
+                // Show if has active lots OR if completely empty (new entity)
+                // Hide if it has lots but all are archived
+                return hasActiveLots || hasNoLots;
+            })
+            .map(e => ({
+                ...e,
+                lots: (e.lots || []).filter(l => !l.isArchived)
+            }));
+    }, [entities]);
 
     // Filter entities based on search term
     const filteredEntities = useMemo(() => {
@@ -3977,6 +3979,187 @@ const EntitiesView: React.FC<{
         return groups;
     }, [filteredEntities]);
 
+    // Early return after all hooks are defined
+    if (!entities || entities.length === 0) {
+        return <p className="text-center text-gray-500 py-8">لا توجد جهات لعرضها. ابدأ بإضافة جهة جديدة.</p>;
+    }
+
+    // Generate HTML for session PDF export
+    const generateSessionHTML = (auctionDate: string, sessionEntities: Entity[], exportDate: string, stats: { totalValue: number; total30: number; remaining70: number; closestDeadline: Timestamp | null }): string => {
+        const entitiesHTML = sessionEntities.map(entity => {
+            const activeLots = (entity.lots || []).filter(l => !l.isArchived);
+            if (activeLots.length === 0) return '';
+
+            const entityTotal = activeLots.reduce((sum, lot) => sum + (lot.totalValue || 0), 0);
+            const entity30 = activeLots.reduce((sum, lot) => sum + (lot.value30 || 0), 0);
+            const entity70 = activeLots.reduce((sum, lot) => sum + (lot.value70 || 0), 0);
+
+            const lotsHTML = sortLotsByNumber(activeLots).map(lot => `
+                <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+                    <td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
+                    <td class="p-4 text-slate-700 font-medium">${lot.name}</td>
+                    <td class="p-4 text-slate-600 font-semibold text-base">${lot.quantity || '-'}</td>
+                    <td class="p-4 font-black text-blue-700 text-lg" dir="ltr">${formatCurrency(lot.totalValue)}</td>
+                    <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(lot.value30)}</td>
+                    <td class="p-4 font-black text-orange-700 text-lg" dir="ltr">${formatCurrency(lot.value70)}</td>
+                    <td class="p-4 text-center">
+                        ${lot.is70Paid
+                    ? `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 text-green-700">تم السداد</span>
+                           ${lot.paymentDetails?.payerName ? `<div class="text-xs text-slate-500 mt-1">بواسطة: ${lot.paymentDetails.payerName}</div>` : ''}`
+                    : `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`
+                }
+                    </td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="mb-8 break-inside-avoid">
+                    <div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-xl mb-4">
+                        <h3 class="text-2xl font-black mb-2">${entity.name}</h3>
+                        ${entity.buyerName ? `<p class="text-lg text-white/90">المشتري: ${entity.buyerName}</p>` : ''}
+                    </div>
+                    
+                    <div class="border border-slate-200 rounded-xl overflow-hidden shadow-lg mb-4">
+                        <table class="w-full text-right">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+                                    <th class="p-3 text-xs font-bold uppercase">رقم اللوط</th>
+                                    <th class="p-3 text-xs font-bold uppercase">اسم اللوط</th>
+                                    <th class="p-3 text-xs font-bold uppercase">الكمية</th>
+                                    <th class="p-3 text-xs font-bold uppercase">الإجمالي</th>
+                                    <th class="p-3 text-xs font-bold uppercase">قيمة 30%</th>
+                                    <th class="p-3 text-xs font-bold uppercase">قيمة 70%</th>
+                                    <th class="p-3 text-xs font-bold uppercase text-center">الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${lotsHTML}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <p class="text-xs text-gray-600 mb-1">إجمالي الجهة</p>
+                            <p class="text-lg font-bold text-blue-700" dir="ltr">${formatCurrency(entityTotal)}</p>
+                        </div>
+                        <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                            <p class="text-xs text-gray-600 mb-1">إجمالي 30%</p>
+                            <p class="text-lg font-bold text-purple-700" dir="ltr">${formatCurrency(entity30)}</p>
+                        </div>
+                        <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                            <p class="text-xs text-gray-600 mb-1">إجمالي 70%</p>
+                            <p class="text-lg font-bold text-orange-700" dir="ltr">${formatCurrency(entity70)}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <!DOCTYPE html>
+            <html lang="ar" dir="rtl">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>تقرير جلسة - ${auctionDate}</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <style>
+                    @media print {
+                        body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                    }
+                </style>
+            </head>
+            <body class="bg-white font-sans">
+                <div class="min-h-screen" style="max-width: 297mm; margin: 0 auto; padding: 40px;">
+                    <header class="mb-10 flex justify-between items-start border-b-2 border-slate-200 pb-8">
+                        <div>
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-700 rounded-lg flex items-center justify-center shadow-lg">
+                                    <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v-2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.32-.42-.58-.5L20 10.62V6c0-1.1-.9-2-2-2h-3V1H9v3H6c-1.1 0-2 .9-2 2v4.62l-1.29.42c-.26.08-.46.26-.58.5s-.15.52-.06.78L3.95 19zM6 6h12v3.97L12 8 6 9.97V6z"/>
+                                    </svg>
+                                </div>
+                                <h1 class="text-3xl font-black text-slate-900">العبارة للتجارة والتوريدات</h1>
+                            </div>
+                            <p class="text-slate-500 text-sm mr-14">إدارة المزادات والتوريدات العامة</p>
+                        </div>
+                        <div class="text-left">
+                            <span class="inline-block bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-bold px-4 py-2 rounded-lg mb-2 shadow-lg">
+                                تقرير جلسة
+                            </span>
+                            <p class="text-slate-400 text-xs font-medium">${exportDate}</p>
+                        </div>
+                    </header>
+
+                    <section class="mb-8">
+                        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl p-6 text-white shadow-xl">
+                            <div class="flex items-center gap-3 mb-4">
+                                <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
+                                </svg>
+                                <h2 class="text-3xl font-black">جلسة: ${auctionDate}</h2>
+                            </div>
+                            <p class="text-white/80">عدد الجهات: ${sessionEntities.length}</p>
+                        </div>
+                    </section>
+
+                    <section class="mb-8">
+                        <div class="flex items-center gap-2 mb-4">
+                            <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
+                            <h3 class="text-lg font-bold text-slate-800">إحصائيات الجلسة</h3>
+                        </div>
+                        <div class="grid grid-cols-4 gap-4">
+                            <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <p class="text-xs text-gray-600 mb-1">إجمالي قيمة اللوطات</p>
+                                <p class="text-xl font-bold text-blue-700" dir="ltr">${formatCurrency(stats.totalValue)}</p>
+                            </div>
+                            <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                                <p class="text-xs text-gray-600 mb-1">إجمالي 30%</p>
+                                <p class="text-xl font-bold text-purple-700" dir="ltr">${formatCurrency(stats.total30)}</p>
+                            </div>
+                            <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                                <p class="text-xs text-gray-600 mb-1">المتبقي 70%</p>
+                                <p class="text-xl font-bold text-orange-700" dir="ltr">${formatCurrency(stats.remaining70)}</p>
+                            </div>
+                            <div class="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                                <p class="text-xs text-gray-600 mb-1">أقرب ميعاد للدفع</p>
+                                <p class="text-base font-bold text-amber-700" dir="ltr">${stats.closestDeadline ? formatDate(stats.closestDeadline) : 'لا يوجد'}</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="mb-8">
+                        <div class="flex items-center gap-2 mb-6">
+                            <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
+                            <h3 class="text-lg font-bold text-slate-800">الجهات واللوطات</h3>
+                        </div>
+                        ${entitiesHTML}
+                    </section>
+
+                    <footer class="mt-12 pt-6 border-t border-slate-200 text-center text-slate-400 text-xs">
+                        <p class="font-medium">العبارة للتجارة والتوريدات © ${new Date().getFullYear()}</p>
+                        <p class="mt-1">تم إنشاء هذا المستند تلقائياً بواسطة نظام إدارة المزادات</p>
+                    </footer>
+                </div>
+            </body>
+            </html>
+        `;
+    };
+
+    // Handle print functionality
+    const handlePrint = (html: string) => {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => {
+                printWindow.print();
+            }, 250);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <DashboardMetrics entities={entities} />
@@ -3999,7 +4182,7 @@ const EntitiesView: React.FC<{
 
             {/* Grouped Sessions */}
             <div className="space-y-6">
-                {Object.entries(groupedByAuctionDate)
+                {(Object.entries(groupedByAuctionDate) as [string, { entities: Entity[]; stats: { totalValue: number; total30: number; remaining70: number; closestDeadline: Timestamp | null } }][])
                     .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
                     .map(([auctionDate, sessionData]) => (
                         <div key={auctionDate} className="border-4 border-blue-300 rounded-xl p-4 bg-blue-50">
@@ -4013,8 +4196,9 @@ const EntitiesView: React.FC<{
                                 </h2>
                                 <button
                                     onClick={() => {
-                                        // TODO: Add export session PDF functionality
-                                        console.log('Export session:', auctionDate, sessionData.entities);
+                                        const exportDate = formatSpecificDateTime(Timestamp.now());
+                                        const html = generateSessionHTML(auctionDate, sessionData.entities, exportDate, sessionData.stats);
+                                        handlePrint(html);
                                     }}
                                     className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-semibold"
                                 >
