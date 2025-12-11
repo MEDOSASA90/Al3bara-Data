@@ -47,7 +47,7 @@ export interface Client {
     isBuyer?: boolean;
     isArchived?: boolean;
     archiveType?: 'entities' | 'work' | 'advances'; // Track which archive category
-    phone?: string; // Added phone field
+    phone?: string | string[]; // Support both single phone and multiple phones for backward compatibility
 }
 
 export interface PaymentDetails {

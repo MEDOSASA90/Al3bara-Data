@@ -3696,7 +3696,26 @@ const ClientCard: React.FC<{
 }> = ({ client, type, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary, onSettleClient }) => {
 
     const [isExpanded, setIsExpanded] = useState(true);
+    const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
+    const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
     const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
+
+    // Get phone numbers as array
+    const phoneNumbers = useMemo(() => {
+        if (!client.phone) return [];
+        return Array.isArray(client.phone) ? client.phone : [client.phone];
+    }, [client.phone]);
+
+    // Copy phone number to clipboard
+    const copyPhoneNumber = async (phone: string) => {
+        try {
+            await navigator.clipboard.writeText(phone);
+            setCopiedPhone(phone);
+            setTimeout(() => setCopiedPhone(null), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
 
     // Group transactions by date
     // Now safe because this is a top-level hook inside ClientCard
@@ -3732,14 +3751,49 @@ const ClientCard: React.FC<{
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                     </div>
-                    <div>
-                        <h3 className="text-xl font-bold text-gray-800">{client.name}</h3>
-                        {client.phone && <p className="text-sm text-gray-500">📞 {client.phone}</p>}
-                    </div>
+                    <h3 className="text-xl font-bold text-gray-800">{client.name}</h3>
                     {client.isBuyer && (
                         <span className="bg-purple-200 text-purple-800 text-xs px-2 py-1 rounded-full font-bold border border-purple-300">
                             مشتري
                         </span>
+                    )}
+                    {phoneNumbers.length > 0 && (
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
+                            <button
+                                onClick={() => setShowPhoneDropdown(!showPhoneDropdown)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                                title="أرقام الهاتف"
+                            >
+                                📞
+                            </button>
+                            {showPhoneDropdown && (
+                                <>
+                                    <div
+                                        className="fixed inset-0 z-10"
+                                        onClick={() => setShowPhoneDropdown(false)}
+                                    />
+                                    <div className="absolute left-0 top-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-20 min-w-[200px]">
+                                        <div className="p-2">
+                                            <p className="text-xs text-gray-500 font-semibold mb-2 px-2">أرقام الهاتف</p>
+                                            {phoneNumbers.map((phone, index) => (
+                                                <button
+                                                    key={index}
+                                                    onClick={() => copyPhoneNumber(phone)}
+                                                    className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded flex items-center justify-between gap-2 transition-colors"
+                                                >
+                                                    <span className="font-mono text-sm">{phone}</span>
+                                                    {copiedPhone === phone ? (
+                                                        <span className="text-green-600 text-xs">✓</span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs">📋</span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="flex items-center flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
