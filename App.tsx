@@ -1878,6 +1878,13 @@ const App: React.FC = () => {
         printWindow.focus();
     };
 
+    // Helper function to format phone numbers for PDF export
+    const formatPhoneNumbers = (phone?: string | string[]): string => {
+        if (!phone) return '';
+        const phones = Array.isArray(phone) ? phone : [phone];
+        return phones.join(' • ');
+    };
+
     const generateTransactionHTML = (client: Client, transaction: Transaction, exportDate: string): string => {
         const itemsHTML = transaction.items && transaction.items.length > 0 ? `
             <section class="mb-10 flex-grow">
@@ -2002,6 +2009,7 @@ const App: React.FC = () => {
                     <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">العميل</h3>
                         <p class="text-2xl font-bold text-slate-800">${client.name}</p>
+                        ${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${formatPhoneNumbers(client.phone)}</p>` : ''}
                     </div>
                     <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100">
                         <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">تفاصيل الحركة</h3>
@@ -2483,6 +2491,7 @@ const App: React.FC = () => {
                         <div>
                             <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">بيانات العميل</h2>
                             <p class="text-3xl font-black text-slate-800">${client.name}</p>
+                            ${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${formatPhoneNumbers(client.phone)}</p>` : ''}
                         </div>
                     </div>
                 </section>
@@ -2647,7 +2656,10 @@ const App: React.FC = () => {
 
             return `
                 <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                    <td class="p-4 text-slate-800 font-bold">${client.name}</td>
+                    <td class="p-4">
+                        <div class="text-slate-800 font-bold">${client.name}</div>
+                        ${client.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${formatPhoneNumbers(client.phone)}</div>` : ''}
+                    </td>
                     <td class="p-4 text-slate-600 text-sm">${lastTransaction ? formatDate(lastTransaction.date) : '-'}</td>
                     <td class="p-4 text-center font-bold font-mono text-sm ${balance >= 0 ? 'text-red-600' : 'text-green-600'}">
                         ${formatCurrency(Math.abs(balance))} ${balance >= 0 ? '(مدين)' : '(دائن)'}
