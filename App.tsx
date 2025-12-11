@@ -76,6 +76,22 @@ const formatDate = (timestamp: Timestamp) => {
     }
 };
 
+// Sort lots numerically by lot number
+const sortLotsByNumber = (lots: Lot[]): Lot[] => {
+    if (!lots || lots.length === 0) return [];
+
+    return [...lots].sort((a, b) => {
+        // Handle undefined or null lot numbers
+        if (!a.lotNumber) return 1;
+        if (!b.lotNumber) return -1;
+
+        // Extract numeric part from lot number
+        const numA = parseInt(String(a.lotNumber).replace(/\D/g, '')) || 0;
+        const numB = parseInt(String(b.lotNumber).replace(/\D/g, '')) || 0;
+        return numA - numB;
+    });
+};
+
 const formatSpecificDateTime = (timestamp: Timestamp | null) => {
     if (!timestamp || !timestamp.toDate || typeof timestamp.toDate !== 'function') {
         return 'لا يوجد تاريخ';
@@ -2027,6 +2043,56 @@ const App: React.FC = () => {
         const total70 = allLots.reduce((sum, lot) => sum + (lot.value70 || 0), 0);
         const remainingToSupply = allLots.filter(l => !l.is70Paid).reduce((sum, lot) => sum + (lot.value70 || 0), 0);
 
+        // Aggregate shippers data
+        const shippersMap = new Map<string, { lotsCount: number; initialBalance: number }>();
+        allLots.forEach(lot => {
+            if (lot.loadingDetails?.loaderName) {
+                const loaderName = lot.loadingDetails.loaderName;
+                const existing = shippersMap.get(loaderName) || { lotsCount: 0, initialBalance: 0 };
+                shippersMap.set(loaderName, {
+                    lotsCount: existing.lotsCount + 1,
+                    initialBalance: existing.initialBalance + (lot.value30 || 0)
+                });
+            }
+        });
+
+        // Convert shippers map to array and sort by name
+        const shippersArray = Array.from(shippersMap.entries())
+            .map(([name, data]) => ({ name, ...data }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
+        // Generate shippers HTML
+        const shippersHTML = shippersArray.length > 0 ? `
+            <section class="mb-10">
+                <div class="flex items-center gap-2 mb-6">
+                    <div class="w-1 h-8 bg-green-600 rounded-full"></div>
+                    <h2 class="text-2xl font-bold text-slate-800">صف الشاحنين</h2>
+                </div>
+                <div class="border border-slate-200 rounded-xl overflow-hidden shadow-lg">
+                    <table class="w-full text-right">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+                                <th class="p-3 text-xs font-bold uppercase">#</th>
+                                <th class="p-3 text-xs font-bold uppercase">اسم الشاحن</th>
+                                <th class="p-3 text-xs font-bold uppercase">الرصيد المبدئي</th>
+                                <th class="p-3 text-xs font-bold uppercase text-center">عدد الحركات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${shippersArray.map((shipper, index) => `
+                                <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+                                    <td class="p-4 text-slate-800 font-bold text-base">${index + 1}</td>
+                                    <td class="p-4 text-slate-700 font-medium text-lg">${shipper.name}</td>
+                                    <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(shipper.initialBalance)}</td>
+                                    <td class="p-4 text-center font-bold text-blue-700 text-lg">${shipper.lotsCount}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        ` : '';
+
         const entitiesHTML = entities.map(entity => {
             const activeLots = (entity.lots || []).filter(l => !l.isArchived);
             if (activeLots.length === 0) return '';
@@ -2036,7 +2102,7 @@ const App: React.FC = () => {
             const entity70 = activeLots.reduce((sum, lot) => sum + (lot.value70 || 0), 0);
             const entityRemaining = activeLots.filter(l => !l.is70Paid).reduce((sum, lot) => sum + (lot.value70 || 0), 0);
 
-            const lotsHTML = activeLots.map(lot => `
+            const lotsHTML = sortLotsByNumber(activeLots).map(lot => `
                 <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
                     <td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
                     <td class="p-4 text-slate-700 font-medium">${lot.name}</td>
@@ -2196,6 +2262,8 @@ const App: React.FC = () => {
                     </div>
                 </section>
 
+                ${shippersHTML}
+
                 <section>
                     <div class="flex items-center gap-2 mb-6">
                         <div class="w-1 h-8 bg-blue-600 rounded-full"></div>
@@ -2219,7 +2287,7 @@ const App: React.FC = () => {
         const entity70 = activeLots.reduce((sum, lot) => sum + (lot.value70 || 0), 0);
         const entityRemaining = activeLots.filter(l => !l.is70Paid).reduce((sum, lot) => sum + (lot.value70 || 0), 0);
 
-        const lotsHTML = activeLots.map(lot => `
+        const lotsHTML = sortLotsByNumber(activeLots).map(lot => `
             <tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
                 <td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
                 <td class="p-4 text-slate-700 font-medium">${lot.name}</td>
@@ -2836,7 +2904,16 @@ const App: React.FC = () => {
 
         const archivedAdvances = clients.filter(c => c.isArchived && c.archiveType === 'advances');
         const archivedWork = workClients.filter(c => c.isArchived && c.archiveType === 'work');
-        const archivedLots = entities.reduce((sum, e) => sum + (e.lots?.filter(l => l.isArchived).length || 0), 0);
+        const archivedLotsCount = entities.reduce((sum, e) => sum + (e.lots?.filter(l => l.isArchived).length || 0), 0);
+
+        // Get all archived lots with their entity information
+        const archivedLotsWithEntity = entities.flatMap(entity =>
+            (entity.lots || [])
+                .filter(lot => lot.isArchived)
+                .map(lot => ({ lot, entityName: entity.name, entityBuyer: entity.buyerName }))
+        );
+
+
 
         const html = `
             <!DOCTYPE html>
@@ -2848,11 +2925,14 @@ const App: React.FC = () => {
                     body { font-family: 'Arial', sans-serif; direction: rtl; padding: 20px; }
                     .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
                     .stats { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-                    .section { margin-bottom: 30px; }
+                    .section { margin-bottom: 30px; page-break-inside: avoid; }
                     .section h2 { background: #333; color: white; padding: 10px; border-radius: 4px; }
+
+                    .section.entities h2 { background: #007bff; }
                     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                     th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
-                    th { background: #666; color: white; }
+                    th { background: #666; color: white; font-size: 12px; }
+                    .entity-header { background: #e9ecef; font-weight: bold; }
                 </style>
             </head>
             <body>
@@ -2866,10 +2946,48 @@ const App: React.FC = () => {
                     <ul>
                         <li>إجمالي عملاء السلف المؤرشفين: ${archivedAdvances.length}</li>
                         <li>إجمالي عملاء الشغل المؤرشفين: ${archivedWork.length}</li>
-                        <li>إجمالي اللوطات المؤرشفة: ${archivedLots}</li>
-                        <li><strong>الإجمالي الكلي: ${archivedAdvances.length + archivedWork.length + archivedLots}</strong></li>
+                        <li>إجمالي اللوطات المؤرشفة: ${archivedLotsCount}</li>
+                        <li><strong>الإجمالي الكلي: ${archivedAdvances.length + archivedWork.length + archivedLotsCount}</strong></li>
                     </ul>
                 </div>
+
+                ${archivedLotsWithEntity.length > 0 ? `
+                <div class="section entities">
+                    <h2>تفاصيل الجهات واللوطات المؤرشفة</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>اسم الجهة</th>
+                                <th>المشتري</th>
+                                <th>رقم اللوط</th>
+                                <th>المسمى</th>
+                                <th>الكمية</th>
+                                <th>الإجمالي</th>
+                                <th>30%</th>
+                                <th>70%</th>
+                                <th>الشاحن</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${archivedLotsWithEntity.map((item, index) => `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${item.entityName}</td>
+                                    <td>${item.entityBuyer || '-'}</td>
+                                    <td>${item.lot.lotNumber}</td>
+                                    <td>${item.lot.name}</td>
+                                    <td>${item.lot.quantity || '-'}</td>
+                                    <td>${formatCurrency(item.lot.totalValue)}</td>
+                                    <td>${formatCurrency(item.lot.value30)}</td>
+                                    <td>${formatCurrency(item.lot.value70)}</td>
+                                    <td>${item.lot.loadingDetails?.loaderName || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ` : ''}
                 
                 <div class="section">
                     <h2>عملاء السلف المؤرشفين</h2>
@@ -3689,6 +3807,18 @@ const ClientsView: React.FC<{
     onSettleClient: (client: Client, total: number) => void;
 }> = ({ type, clients, onOpenClientModal, onDeleteClient, onOpenTransactionModal, onOpenPaymentModal, onExportTransaction, onDeleteTransaction, onExportSummary, onSettleClient }) => {
 
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // Filter clients based on search term
+    const filteredClients = useMemo(() => {
+        if (!searchTerm.trim()) return clients;
+
+        const lowerSearch = searchTerm.toLowerCase();
+        return clients.filter(client =>
+            client.name.toLowerCase().includes(lowerSearch)
+        );
+    }, [clients, searchTerm]);
+
     if (!clients || clients.length === 0) {
         return (
             <div>
@@ -3703,9 +3833,25 @@ const ClientsView: React.FC<{
             {/* Summary Panel */}
             <SummaryPanel clients={clients} type={type} />
 
+            {/* Search Bar */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 mb-6">
+                <input
+                    type="text"
+                    placeholder="🔍 ابحث باسم العميل..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                />
+                {searchTerm && (
+                    <p className="text-sm text-gray-500 mt-2">
+                        عرض {filteredClients.length} من {clients.length} عميل
+                    </p>
+                )}
+            </div>
+
             {/* Clients List */}
             <div className="space-y-6">
-                {clients.map(client => (
+                {filteredClients.map(client => (
                     <ClientCard
                         key={client.id}
                         client={client}
@@ -3738,6 +3884,7 @@ const EntitiesView: React.FC<{
 }> = ({ entities, onOpenLotModal, onOpenEntityModal, onToggleArchive, onDeleteEntity, onDeleteLot, onOpenSupplyModal, onOpenLoadingModal, onExportEntity }) => {
 
     const [expandedEntityId, setExpandedEntityId] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     if (!entities || entities.length === 0) {
         return <p className="text-center text-gray-500 py-8">لا توجد جهات لعرضها. ابدأ بإضافة جهة جديدة.</p>
@@ -3756,250 +3903,406 @@ const EntitiesView: React.FC<{
             lots: (e.lots || []).filter(l => !l.isArchived)
         }));
 
+    // Filter entities based on search term
+    const filteredEntities = useMemo(() => {
+        if (!searchTerm.trim()) return activeLotsEntities;
+
+        const lowerSearch = searchTerm.toLowerCase();
+        return activeLotsEntities.filter(entity => {
+            // Search in entity name
+            if (entity.name.toLowerCase().includes(lowerSearch)) return true;
+
+            // Search in buyer name
+            if (entity.buyerName?.toLowerCase().includes(lowerSearch)) return true;
+
+            // Search in lot numbers and names
+            return entity.lots.some(lot =>
+                lot.lotNumber.toLowerCase().includes(lowerSearch) ||
+                lot.name.toLowerCase().includes(lowerSearch)
+            );
+        });
+    }, [activeLotsEntities, searchTerm]);
+
+    // Group entities by auction date with statistics
+    const groupedByAuctionDate = useMemo(() => {
+        const groups: {
+            [key: string]: {
+                entities: Entity[];
+                stats: {
+                    totalValue: number;
+                    total30: number;
+                    remaining70: number;
+                    closestDeadline: Timestamp | null;
+                };
+            };
+        } = {};
+
+        filteredEntities.forEach(entity => {
+            if (entity.auctionDate) {
+                const dateKey = formatSpecificDateTime(entity.auctionDate);
+                if (!groups[dateKey]) {
+                    groups[dateKey] = {
+                        entities: [],
+                        stats: {
+                            totalValue: 0,
+                            total30: 0,
+                            remaining70: 0,
+                            closestDeadline: null
+                        }
+                    };
+                }
+
+                groups[dateKey].entities.push(entity);
+
+                // Calculate statistics
+                const activeLots = (entity.lots || []).filter(l => !l.isArchived);
+                groups[dateKey].stats.totalValue += activeLots.reduce((sum, lot) => sum + (lot.totalValue || 0), 0);
+                groups[dateKey].stats.total30 += activeLots.reduce((sum, lot) => sum + (lot.value30 || 0), 0);
+                groups[dateKey].stats.remaining70 += activeLots.filter(l => !l.is70Paid).reduce((sum, lot) => sum + (lot.value70 || 0), 0);
+
+                // Calculate closest deadline
+                if (entity.auctionDate && typeof entity.auctionDate.toDate === 'function') {
+                    const deadlineDate = new Date(entity.auctionDate.toMillis());
+                    deadlineDate.setDate(deadlineDate.getDate() + 15);
+                    const deadline = Timestamp.fromDate(deadlineDate);
+
+                    if (!groups[dateKey].stats.closestDeadline ||
+                        deadline.toMillis() < groups[dateKey].stats.closestDeadline.toMillis()) {
+                        groups[dateKey].stats.closestDeadline = deadline;
+                    }
+                }
+            }
+        });
+
+        return groups;
+    }, [filteredEntities]);
 
     return (
         <div className="space-y-6">
             <DashboardMetrics entities={entities} />
 
-            <div className="space-y-4">
-                {activeLotsEntities.map(entity => {
-                    const isExpanded = expandedEntityId === entity.id;
+            {/* Search Bar */}
+            <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
+                <input
+                    type="text"
+                    placeholder="🔍 ابحث بالجهة، المشتري، أو رقم/اسم اللوط..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                />
+                {searchTerm && (
+                    <p className="text-sm text-gray-500 mt-2">
+                        عرض {filteredEntities.length} من {activeLotsEntities.length} جهة
+                    </p>
+                )}
+            </div>
 
-                    const entityMetrics = {
-                        totalLotsValue: entity.lots.reduce((sum, lot) => sum + (lot.totalValue || 0), 0),
-                        total30: entity.lots.reduce((sum, lot) => sum + (lot.value30 || 0), 0),
-                        total70: entity.lots.reduce((sum, lot) => sum + (lot.value70 || 0), 0),
-                    };
-
-                    let closestDeadlineTimestamp: Timestamp | null = null;
-                    if (entity.auctionDate && typeof entity.auctionDate.toDate === 'function') {
-                        const deadlineDate = new Date(entity.auctionDate.toMillis());
-                        deadlineDate.setDate(deadlineDate.getDate() + 15);
-                        closestDeadlineTimestamp = Timestamp.fromDate(deadlineDate);
-                    }
-
-                    const areAllLotsPaid = entity.lots.length > 0 && entity.lots.every(l => l.is70Paid);
-
-                    return (
-                        <div key={entity.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                            <div className="p-3 md:p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                                <div
-                                    className="flex-grow cursor-pointer w-full md:w-auto"
-                                    onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
+            {/* Grouped Sessions */}
+            <div className="space-y-6">
+                {Object.entries(groupedByAuctionDate)
+                    .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+                    .map(([auctionDate, sessionData]) => (
+                        <div key={auctionDate} className="border-4 border-blue-300 rounded-xl p-4 bg-blue-50">
+                            {/* Session Header */}
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 pb-3 border-b-2 border-blue-400">
+                                <h2 className="text-xl font-bold text-blue-800 flex items-center gap-2">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                    </svg>
+                                    جلسة: <span dir="ltr">{auctionDate}</span>
+                                </h2>
+                                <button
+                                    onClick={() => {
+                                        // TODO: Add export session PDF functionality
+                                        console.log('Export session:', auctionDate, sessionData.entities);
+                                    }}
+                                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-semibold"
                                 >
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-blue-700">{entity.name}</h3>
-                                            {entity.buyerName && <p className="text-xs text-gray-600 mt-1">المشتري: {entity.buyerName}</p>}
-                                            <p className="text-sm text-gray-500">ميعاد الجلسة: {formatSpecificDateTime(entity.auctionDate)}</p>
-                                        </div>
-                                        {/* Arrow for mobile only */}
-                                        <div className="md:hidden">
-                                            <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </div>
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
+                                    </svg>
+                                    تصدير PDF للجلسة
+                                </button>
+                            </div>
+
+                            {/* Session Statistics */}
+                            <div className="mb-4 bg-white rounded-lg p-4 border-2 border-blue-200">
+                                <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                                    </svg>
+                                    إحصائيات الجلسة
+                                </h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                        <p className="text-xs text-gray-600 mb-1">إجمالي قيمة اللوطات</p>
+                                        <p className="text-lg font-bold text-blue-700" dir="ltr">
+                                            {formatCurrency(sessionData.stats.totalValue)}
+                                        </p>
                                     </div>
-                                </div>
-
-                                <div
-                                    className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {/* زر تم التحميل (نقل للأرشيف) */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenLoadingModal(entity.id); // Open for whole entity
-                                        }}
-                                        className="text-xs bg-teal-100 text-teal-700 font-semibold py-1.5 px-3 rounded-md hover:bg-teal-200 flex-grow md:flex-grow-0 text-center"
-                                    >
-                                        تم التحميل
-                                    </button>
-
-                                    {/* زر تعديل */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onOpenEntityModal(entity);
-                                        }}
-                                        className="text-xs bg-gray-200 text-gray-700 font-semibold py-1.5 px-3 rounded-md hover:bg-gray-300 flex-grow md:flex-grow-0 text-center"
-                                    >
-                                        تعديل
-                                    </button>
-
-                                    {/* زر تصدير PDF */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onExportEntity(entity);
-                                        }}
-                                        className="text-xs bg-green-100 text-green-700 font-semibold py-1.5 px-3 rounded-md hover:bg-green-200 flex items-center justify-center gap-1 flex-grow md:flex-grow-0"
-                                    >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        تصدير
-                                    </button>
-
-                                    {/* زر حذف */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onDeleteEntity(entity.id);
-                                        }}
-                                        className="text-xs bg-red-100 text-red-700 font-semibold py-1.5 px-3 rounded-md hover:bg-red-200 flex-grow md:flex-grow-0 text-center"
-                                    >
-                                        حذف
-                                    </button>
-
-                                    {/* زر السهم - Desktop */}
-                                    <div
-                                        className="cursor-pointer hidden md:block mr-2"
-                                        onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
-                                    >
-                                        <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                        </svg>
+                                    <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                                        <p className="text-xs text-gray-600 mb-1">إجمالي 30%</p>
+                                        <p className="text-lg font-bold text-purple-700" dir="ltr">
+                                            {formatCurrency(sessionData.stats.total30)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                                        <p className="text-xs text-gray-600 mb-1">المتبقي 70%</p>
+                                        <p className="text-lg font-bold text-orange-700" dir="ltr">
+                                            {formatCurrency(sessionData.stats.remaining70)}
+                                        </p>
+                                    </div>
+                                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                        <p className="text-xs text-gray-600 mb-1">أقرب ميعاد للدفع</p>
+                                        <p className="text-sm font-bold text-amber-700" dir="ltr">
+                                            {sessionData.stats.closestDeadline ? formatDate(sessionData.stats.closestDeadline) : 'لا يوجد'}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="bg-blue-50 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border-t border-b border-gray-200">
-                                <div>
-                                    <p className="text-xs text-gray-600">إجمالي اللوطات</p>
-                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.totalLotsValue)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-600">إجمالي 30%</p>
-                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total30)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-600">المتبقي 70%</p>
-                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total70)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-600">أقرب ميعاد للدفع</p>
-                                    {areAllLotsPaid ? (
-                                        <div className="flex flex-col">
-                                            <span className="font-bold text-green-600">تم السداد</span>
-                                            {entity.lots[0]?.paymentDetails?.payerName && (
-                                                <span className="text-xs text-gray-600">بواسطة: {entity.lots[0].paymentDetails.payerName}</span>
-                                            )}
-                                            {entity.lots[0]?.paymentDetails?.receiptImage && (
-                                                <a
-                                                    href={entity.lots[0].paymentDetails.receiptImage.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-[10px] bg-teal-100 text-teal-700 px-1 rounded border border-teal-200 hover:bg-teal-200 w-fit mt-1"
+                            {/* Entities in this session */}
+                            <div className="space-y-4">
+                                {sessionData.entities.map(entity => {
+                                    const isExpanded = expandedEntityId === entity.id;
+
+                                    const entityMetrics = {
+                                        totalLotsValue: entity.lots.reduce((sum, lot) => sum + (lot.totalValue || 0), 0),
+                                        total30: entity.lots.reduce((sum, lot) => sum + (lot.value30 || 0), 0),
+                                        total70: entity.lots.reduce((sum, lot) => sum + (lot.value70 || 0), 0),
+                                    };
+
+                                    let closestDeadlineTimestamp: Timestamp | null = null;
+                                    if (entity.auctionDate && typeof entity.auctionDate.toDate === 'function') {
+                                        const deadlineDate = new Date(entity.auctionDate.toMillis());
+                                        deadlineDate.setDate(deadlineDate.getDate() + 15);
+                                        closestDeadlineTimestamp = Timestamp.fromDate(deadlineDate);
+                                    }
+
+                                    const areAllLotsPaid = entity.lots.length > 0 && entity.lots.every(l => l.is70Paid);
+
+                                    return (
+                                        <div key={entity.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                                            <div className="p-3 md:p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                                                <div
+                                                    className="flex-grow cursor-pointer w-full md:w-auto"
+                                                    onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
                                                 >
-                                                    عرض الإيصال
-                                                </a>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <p className="font-bold text-red-600">{formatSpecificDateTime(closestDeadlineTimestamp)}</p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {isExpanded && (
-                                <div className="p-4 space-y-4">
-                                    <div className="flex items-center space-x-2 flex-wrap gap-2">
-                                        <button
-                                            onClick={() => onOpenSupplyModal('entity', entity.id)}
-                                            className="bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 text-sm"
-                                        >
-                                            توريد المبلغ المتبقي
-                                        </button>
-                                        <button onClick={() => onOpenLotModal(entity)} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 text-sm">+ إضافة لوط</button>
-                                    </div>
-                                    <h4 className="font-bold text-gray-700 pt-2 border-t mt-4">قائمة اللوطات:</h4>
-                                    <div className="space-y-3">
-                                        {entity.lots.map(lot => {
-                                            let lotDeadline: Timestamp | null = null;
-                                            if (entity.auctionDate && typeof entity.auctionDate.toDate === 'function') {
-                                                const deadlineDate = new Date(entity.auctionDate.toMillis());
-                                                deadlineDate.setDate(deadlineDate.getDate() + 15);
-                                                lotDeadline = Timestamp.fromDate(deadlineDate);
-                                            }
-                                            return (
-                                                <div key={lot.id} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                                    <p className="font-bold text-blue-800">لوط رقم: {lot.lotNumber} - {lot.name}</p>
-                                                    <div className="text-sm text-gray-700 mt-2 space-y-1">
-                                                        <div className="grid grid-cols-2 gap-x-4">
-                                                            <p>الكمية: <span className="font-semibold" dir="ltr">{lot.quantity}</span></p>
-                                                            <p>الإجمالي: <span className="font-semibold" dir="ltr">{formatCurrency(lot.totalValue)}</span></p>
-                                                            <p>قيمة 30%: <span className="font-semibold" dir="ltr">{formatCurrency(lot.value30)}</span></p>
-                                                            <p>قيمة 70%: <span className="font-semibold" dir="ltr">{formatCurrency(lot.value70)}</span></p>
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <h3 className="text-lg font-bold text-blue-700">{entity.name}</h3>
+                                                            {entity.buyerName && <p className="text-xs text-gray-600 mt-1">المشتري: {entity.buyerName}</p>}
                                                         </div>
-
-                                                        <div className="mt-2">
-                                                            {lot.is70Paid ? (
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    <span className="font-bold text-green-600">تم السداد</span>
-                                                                    {lot.paymentDetails?.payerName && (
-                                                                        <span className="text-gray-700">
-                                                                            بواسطة: {lot.paymentDetails.payerName}
-                                                                        </span>
-                                                                    )}
-                                                                    {lot.paymentDetails?.receiptImage && (
-                                                                        <a
-                                                                            href={lot.paymentDetails.receiptImage.url}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded border border-teal-200 hover:bg-teal-200"
-                                                                        >
-                                                                            عرض إيصال الدفع
-                                                                        </a>
-                                                                    )}
-                                                                </div>
-                                                            ) : (
-                                                                <p>آخر ميعاد للدفع: <span className="font-semibold text-red-600"> {formatSpecificDateTime(lotDeadline)}</span></p>
-                                                            )}
+                                                        {/* Arrow for mobile only */}
+                                                        <div className="md:hidden">
+                                                            <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                                            </svg>
                                                         </div>
-
-                                                        <div className="flex gap-2 mt-2">
-                                                            {lot.contractImage ? (
-                                                                <a
-                                                                    href={lot.contractImage.url}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-200"
-                                                                >
-                                                                    عرض صورة العقد
-                                                                </a>
-                                                            ) : <span className="text-xs text-gray-400">لا يوجد عقد</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="mt-3 flex items-center flex-wrap gap-2">
-                                                        <button onClick={() => onOpenLotModal(entity, lot)} className="bg-blue-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-blue-600">تعديل</button>
-                                                        {lot.is70Paid ? (
-                                                            <span className="bg-green-100 text-green-800 text-xs font-bold py-1 px-3 rounded-md border border-green-200">تم التوريد</span>
-                                                        ) : (
-                                                            <button onClick={() => onOpenSupplyModal('lot', entity.id, lot.id)} className="bg-red-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-red-600">توريد 70%</button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => onOpenLoadingModal(entity.id, lot.id)}
-                                                            className="bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-green-600"
-                                                        >
-                                                            تم التحميل
-                                                        </button>
-                                                        <button onClick={() => onDeleteLot(entity.id, lot.id)} className="bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-red-700">حذف</button>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
+
+                                                <div
+                                                    className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {/* زر تم التحميل (نقل للأرشيف) */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onOpenLoadingModal(entity.id); // Open for whole entity
+                                                        }}
+                                                        className="text-xs bg-teal-100 text-teal-700 font-semibold py-1.5 px-3 rounded-md hover:bg-teal-200 flex-grow md:flex-grow-0 text-center"
+                                                    >
+                                                        تم التحميل
+                                                    </button>
+
+                                                    {/* زر تعديل */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onOpenEntityModal(entity);
+                                                        }}
+                                                        className="text-xs bg-gray-200 text-gray-700 font-semibold py-1.5 px-3 rounded-md hover:bg-gray-300 flex-grow md:flex-grow-0 text-center"
+                                                    >
+                                                        تعديل
+                                                    </button>
+
+                                                    {/* زر تصدير PDF */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onExportEntity(entity);
+                                                        }}
+                                                        className="text-xs bg-green-100 text-green-700 font-semibold py-1.5 px-3 rounded-md hover:bg-green-200 flex items-center justify-center gap-1 flex-grow md:flex-grow-0"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        تصدير
+                                                    </button>
+
+                                                    {/* زر حذف */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onDeleteEntity(entity.id);
+                                                        }}
+                                                        className="text-xs bg-red-100 text-red-700 font-semibold py-1.5 px-3 rounded-md hover:bg-red-200 flex-grow md:flex-grow-0 text-center"
+                                                    >
+                                                        حذف
+                                                    </button>
+
+                                                    {/* زر السهم - Desktop */}
+                                                    <div
+                                                        className="cursor-pointer hidden md:block mr-2"
+                                                        onClick={() => setExpandedEntityId(isExpanded ? null : entity.id)}
+                                                    >
+                                                        <svg className={`w-6 h-6 text-gray-500 transition-transform transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                                        </svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-blue-50 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border-t border-b border-gray-200">
+                                                <div>
+                                                    <p className="text-xs text-gray-600">إجمالي اللوطات</p>
+                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.totalLotsValue)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-600">إجمالي 30%</p>
+                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total30)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-600">المتبقي 70%</p>
+                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total70)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-600">أقرب ميعاد للدفع</p>
+                                                    {areAllLotsPaid ? (
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-green-600">تم السداد</span>
+                                                            {entity.lots[0]?.paymentDetails?.payerName && (
+                                                                <span className="text-xs text-gray-600">بواسطة: {entity.lots[0].paymentDetails.payerName}</span>
+                                                            )}
+                                                            {entity.lots[0]?.paymentDetails?.receiptImage && (
+                                                                <a
+                                                                    href={entity.lots[0].paymentDetails.receiptImage.url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-[10px] bg-teal-100 text-teal-700 px-1 rounded border border-teal-200 hover:bg-teal-200 w-fit mt-1"
+                                                                >
+                                                                    عرض الإيصال
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="font-bold text-red-600">{formatSpecificDateTime(closestDeadlineTimestamp)}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {isExpanded && (
+                                                <div className="p-4 space-y-4">
+                                                    <div className="flex items-center space-x-2 flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => onOpenSupplyModal('entity', entity.id)}
+                                                            className="bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 text-sm"
+                                                        >
+                                                            توريد المبلغ المتبقي
+                                                        </button>
+                                                        <button onClick={() => onOpenLotModal(entity)} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 text-sm">+ إضافة لوط</button>
+                                                    </div>
+                                                    <h4 className="font-bold text-gray-700 pt-2 border-t mt-4">قائمة اللوطات:</h4>
+                                                    <div className="space-y-3">
+                                                        {sortLotsByNumber(entity.lots).map(lot => {
+                                                            let lotDeadline: Timestamp | null = null;
+                                                            if (entity.auctionDate && typeof entity.auctionDate.toDate === 'function') {
+                                                                const deadlineDate = new Date(entity.auctionDate.toMillis());
+                                                                deadlineDate.setDate(deadlineDate.getDate() + 15);
+                                                                lotDeadline = Timestamp.fromDate(deadlineDate);
+                                                            }
+                                                            return (
+                                                                <div key={lot.id} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                                    <p className="font-bold text-blue-800">لوط رقم: <span style={{ unicodeBidi: 'plaintext', direction: 'ltr', display: 'inline-block' }}>{lot.lotNumber}</span> - {lot.name}</p>
+                                                                    <div className="text-sm text-gray-700 mt-2 space-y-1">
+                                                                        <div className="grid grid-cols-2 gap-x-4">
+                                                                            <p>الكمية: <span className="font-semibold" dir="ltr">{lot.quantity}</span></p>
+                                                                            <p>الإجمالي: <span className="font-semibold" dir="ltr">{formatCurrency(lot.totalValue)}</span></p>
+                                                                            <p>قيمة 30%: <span className="font-semibold" dir="ltr">{formatCurrency(lot.value30)}</span></p>
+                                                                            <p>قيمة 70%: <span className="font-semibold" dir="ltr">{formatCurrency(lot.value70)}</span></p>
+                                                                        </div>
+
+                                                                        <div className="mt-2">
+                                                                            {lot.is70Paid ? (
+                                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                                    <span className="font-bold text-green-600">تم السداد</span>
+                                                                                    {lot.paymentDetails?.payerName && (
+                                                                                        <span className="text-gray-700">
+                                                                                            بواسطة: {lot.paymentDetails.payerName}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {lot.paymentDetails?.receiptImage && (
+                                                                                        <a
+                                                                                            href={lot.paymentDetails.receiptImage.url}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded border border-teal-200 hover:bg-teal-200"
+                                                                                        >
+                                                                                            عرض إيصال الدفع
+                                                                                        </a>
+                                                                                    )}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <p>آخر ميعاد للدفع: <span className="font-semibold text-red-600"> {formatSpecificDateTime(lotDeadline)}</span></p>
+                                                                            )}
+                                                                        </div>
+
+                                                                        <div className="flex gap-2 mt-2">
+                                                                            {lot.contractImage ? (
+                                                                                <a
+                                                                                    href={lot.contractImage.url}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-200"
+                                                                                >
+                                                                                    عرض صورة العقد
+                                                                                </a>
+                                                                            ) : <span className="text-xs text-gray-400">لا يوجد عقد</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-3 flex items-center flex-wrap gap-2">
+                                                                        <button onClick={() => onOpenLotModal(entity, lot)} className="bg-blue-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-blue-600">تعديل</button>
+                                                                        {lot.is70Paid ? (
+                                                                            <span className="bg-green-100 text-green-800 text-xs font-bold py-1 px-3 rounded-md border border-green-200">تم التوريد</span>
+                                                                        ) : (
+                                                                            <button onClick={() => onOpenSupplyModal('lot', entity.id, lot.id)} className="bg-red-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-red-600">توريد 70%</button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => onOpenLoadingModal(entity.id, lot.id)}
+                                                                            className="bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-green-600"
+                                                                        >
+                                                                            تم التحميل
+                                                                        </button>
+                                                                        <button onClick={() => onDeleteLot(entity.id, lot.id)} className="bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-red-700">حذف</button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    );
-                })}
+                    ))}
             </div>
         </div >
     );
