@@ -3732,7 +3732,10 @@ const ClientCard: React.FC<{
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-800">{client.name}</h3>
+                    <div>
+                        <h3 className="text-xl font-bold text-gray-800">{client.name}</h3>
+                        {client.phone && <p className="text-sm text-gray-500">📞 {client.phone}</p>}
+                    </div>
                     {client.isBuyer && (
                         <span className="bg-purple-200 text-purple-800 text-xs px-2 py-1 rounded-full font-bold border border-purple-300">
                             مشتري
