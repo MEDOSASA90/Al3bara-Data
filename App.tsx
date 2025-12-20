@@ -1011,13 +1011,13 @@ const App: React.FC = () => {
         ];
 
         const unsubscribers = collectionsToFetch.map(({ name, setter, sortField }) => {
-            // FIX: Use Firebase v9 modular syntax for collection, query, and onSnapshot.
+            // Fetch all data without userId filtering - shared data for all users
             let q;
             const collRef = collection(db, name);
             if (sortField) {
-                q = query(collRef, where("userId", "==", user.uid), orderBy(sortField, "desc"));
+                q = query(collRef, orderBy(sortField, "desc"));
             } else {
-                q = query(collRef, where("userId", "==", user.uid));
+                q = collRef;
             }
 
             // FIX: Explicitly type snapshot as QuerySnapshot to resolve error on snapshot.docs
@@ -1127,8 +1127,7 @@ const App: React.FC = () => {
             const newClient = {
                 name: name.trim(),
                 phone: phone?.trim() || '',
-                transactions: [],
-                userId: user.uid
+                transactions: []
             };
 
             await addDoc(collection(db, collectionName), newClient);
@@ -1170,9 +1169,8 @@ const App: React.FC = () => {
         try {
             // FIX: Use Firebase v9 modular syntax for adding a document.
             await addDoc(collection(db, collectionName), {
-                userId: user.uid,
                 name: name.trim(),
-                transactions: [],
+                transactions: []
             });
             setClientModalOpen(false);
         } catch (error) {
@@ -1450,11 +1448,10 @@ const App: React.FC = () => {
             } else {
                 // Add new entity
                 const dataToSave = {
-                    userId: user.uid,
                     name: trimmedName,
                     buyerName: entityData.buyerName || '',
                     auctionDate: firestoreTimestamp,
-                    lots: [],
+                    lots: []
                 };
                 // We don't sync commission here because a new entity has 0 lots => 0 commission
                 await addDoc(collection(db, 'entities'), dataToSave);
@@ -1675,7 +1672,6 @@ const App: React.FC = () => {
         try {
             // FIX: Use Firebase v9 modular syntax for adding a document.
             await addDoc(collection(db, 'predefinedItems'), {
-                userId: user.uid,
                 name: newPredefinedItemName.trim(),
             });
             setNewPredefinedItemName('');
@@ -1691,14 +1687,12 @@ const App: React.FC = () => {
         try {
             // 1. Add to predefinedBuyers list
             await addDoc(collection(db, 'predefinedBuyers'), {
-                userId: user.uid,
                 name: newBuyerName,
             });
 
             // 2. Check if an Advance Client with this name already exists
             const q = query(
                 collection(db, 'advanceClients'),
-                where('userId', '==', user.uid),
                 where('name', '==', newBuyerName)
             );
 
@@ -1707,7 +1701,6 @@ const App: React.FC = () => {
             if (snapshot.empty) {
                 // 3. If not exists, create a new Advance Client marked as isBuyer
                 await addDoc(collection(db, 'advanceClients'), {
-                    userId: user.uid,
                     name: newBuyerName,
                     transactions: [],
                     isBuyer: true // Mark this as a Buyer Account
