@@ -357,21 +357,20 @@ const MetricCard: React.FC<{
     tag?: React.ReactNode;
     gradient: string;
     icon: string;
-    subText?: string
-}> = ({ title, value, tag, gradient, icon, subText }) => (
+    subText?: string;
+    valueColor?: string;
+}> = ({ title, value, tag, gradient, icon, subText, valueColor }) => (
     <div className={`group relative bg-gradient-to-br ${gradient} rounded-2xl p-4 md:p-6 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-        <div className="relative z-10">
-            <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-bold text-white/90 uppercase tracking-wider">{title}</span>
-                <div className="flex items-center gap-2">
-                    {tag}
-                    <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <span className="text-2xl">{icon}</span>
-                    </div>
+        <div className="relative z-10 flex flex-col items-center text-center">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                    <span className="text-2xl">{icon}</span>
                 </div>
+                {tag}
             </div>
-            <p className="text-3xl font-black text-white mb-2" dir="ltr">{value}</p>
+            <span className="text-sm font-bold text-white/90 uppercase tracking-wider mb-3">{title}</span>
+            <p className={`text-3xl font-black mb-2 ${valueColor || 'text-white'}`} dir="ltr">{value}</p>
             {subText && <p className="text-xs text-white/80 font-medium">{subText}</p>}
         </div>
     </div>
@@ -452,18 +451,21 @@ const DashboardMetrics: React.FC<{ entities: Entity[] }> = ({ entities }) => {
                     value={formatCurrency(metrics.totalInvoices)}
                     gradient="from-blue-500 to-indigo-600"
                     icon="📄"
+                    valueColor="text-yellow-300"
                 />
                 <MetricCard
                     title="إجمالي المتبقي (70%)"
                     value={formatCurrency(metrics.remainingToSupply)}
                     gradient="from-orange-500 to-red-600"
                     icon="📉"
+                    valueColor="text-orange-200"
                 />
                 <MetricCard
                     title="إجمالي المتبقي (30%)"
                     value={formatCurrency(metrics.remaining30)}
                     gradient="from-purple-500 to-pink-600"
                     icon="📊"
+                    valueColor="text-pink-200"
                 />
                 {metrics.upcomingLot && metrics.upcomingLot.auctionDate ? (() => {
                     const deadlineDate = new Date(metrics.upcomingLot.auctionDate.toMillis());
@@ -477,6 +479,7 @@ const DashboardMetrics: React.FC<{ entities: Entity[] }> = ({ entities }) => {
                             tag={getStatusTag(getDaysDiff(metrics.upcomingLot.auctionDate))}
                             gradient="from-teal-500 to-cyan-600"
                             icon="📅"
+                            valueColor="text-cyan-200"
                         />
                     );
                 })() : (
@@ -485,6 +488,7 @@ const DashboardMetrics: React.FC<{ entities: Entity[] }> = ({ entities }) => {
                         value="لا يوجد"
                         gradient="from-teal-500 to-cyan-600"
                         icon="📅"
+                        valueColor="text-cyan-200"
                     />
                 )}
             </div>
