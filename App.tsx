@@ -362,19 +362,19 @@ const MetricCard: React.FC<{
 }> = ({ title, value, tag, gradient, icon, subText, valueColor }) => (
     <div className={`group relative bg-gradient-to-br ${gradient} rounded-2xl p-4 md:p-6 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-        <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="flex items-center gap-2 mb-2">
+        <div className="relative z-10 flex flex-col text-right w-full" dir="rtl">
+            <div className="flex items-center gap-2 mb-2 justify-end">
+                {tag}
                 <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
                     <span className="text-2xl">{icon}</span>
                 </div>
-                {tag}
             </div>
             <span className="text-sm font-bold text-white/90 uppercase tracking-wider mb-3">{title}</span>
-            <p className={`text-3xl font-black mb-2 ${valueColor || 'text-white'}`} dir="ltr">{value}</p>
+            <p className={`text-3xl font-black mb-2 ${valueColor || 'text-white'}`}>{value}</p>
             {subText && <p className="text-xs text-white/80 font-medium">{subText}</p>}
         </div>
     </div>
-);
+); // Updated with right alignment and custom colors
 
 
 const DashboardMetrics: React.FC<{ entities: Entity[] }> = ({ entities }) => {
@@ -3996,6 +3996,7 @@ const EntitiesView: React.FC<{
         const groups: {
             [key: string]: {
                 entities: Entity[];
+                originalTimestamp: Timestamp;
                 stats: {
                     totalValue: number;
                     total30: number;
@@ -4007,10 +4008,11 @@ const EntitiesView: React.FC<{
 
         filteredEntities.forEach(entity => {
             if (entity.auctionDate) {
-                const dateKey = formatSpecificDateTime(entity.auctionDate);
+                const dateKey = formatDate(entity.auctionDate);
                 if (!groups[dateKey]) {
                     groups[dateKey] = {
                         entities: [],
+                        originalTimestamp: entity.auctionDate,
                         stats: {
                             totalValue: 0,
                             total30: 0,
@@ -4263,8 +4265,8 @@ const EntitiesView: React.FC<{
 
             {/* Grouped Sessions */}
             <div className="space-y-6">
-                {(Object.entries(groupedByAuctionDate) as [string, { entities: Entity[]; stats: { totalValue: number; total30: number; remaining70: number; closestDeadline: Timestamp | null } }][])
-                    .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+                {(Object.entries(groupedByAuctionDate) as [string, { entities: Entity[]; originalTimestamp: Timestamp; stats: { totalValue: number; total30: number; remaining70: number; closestDeadline: Timestamp | null } }][])
+                    .sort(([, a], [, b]) => b.originalTimestamp.toMillis() - a.originalTimestamp.toMillis())
                     .map(([auctionDate, sessionData]) => (
                         <div key={auctionDate} className="border-4 border-blue-300 rounded-xl p-4 bg-blue-50">
                             {/* Session Header */}
@@ -4299,27 +4301,27 @@ const EntitiesView: React.FC<{
                                     إحصائيات الجلسة
                                 </h3>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 text-right" dir="rtl">
                                         <p className="text-xs text-gray-600 mb-1">إجمالي قيمة اللوطات</p>
-                                        <p className="text-lg font-bold text-blue-700" dir="ltr">
+                                        <p className="text-lg font-bold text-blue-700">
                                             {formatCurrency(sessionData.stats.totalValue)}
                                         </p>
                                     </div>
-                                    <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
+                                    <div className="bg-purple-50 p-3 rounded-lg border border-purple-200 text-right" dir="rtl">
                                         <p className="text-xs text-gray-600 mb-1">إجمالي 30%</p>
-                                        <p className="text-lg font-bold text-purple-700" dir="ltr">
+                                        <p className="text-lg font-bold text-purple-700">
                                             {formatCurrency(sessionData.stats.total30)}
                                         </p>
                                     </div>
-                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200">
+                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-200 text-right" dir="rtl">
                                         <p className="text-xs text-gray-600 mb-1">المتبقي 70%</p>
-                                        <p className="text-lg font-bold text-orange-700" dir="ltr">
+                                        <p className="text-lg font-bold text-orange-700">
                                             {formatCurrency(sessionData.stats.remaining70)}
                                         </p>
                                     </div>
-                                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                    <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-right" dir="rtl">
                                         <p className="text-xs text-gray-600 mb-1">أقرب ميعاد للدفع</p>
-                                        <p className="text-sm font-bold text-amber-700" dir="ltr">
+                                        <p className="text-sm font-bold text-amber-700">
                                             {sessionData.stats.closestDeadline ? formatDate(sessionData.stats.closestDeadline) : 'لا يوجد'}
                                         </p>
                                     </div>
@@ -4435,19 +4437,19 @@ const EntitiesView: React.FC<{
                                             </div>
 
                                             <div className="bg-blue-50 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border-t border-b border-gray-200">
-                                                <div>
+                                                <div className="text-right" dir="rtl">
                                                     <p className="text-xs text-gray-600">إجمالي اللوطات</p>
-                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.totalLotsValue)}</p>
+                                                    <p className="font-bold text-gray-800">{formatCurrency(entityMetrics.totalLotsValue)}</p>
                                                 </div>
-                                                <div>
+                                                <div className="text-right" dir="rtl">
                                                     <p className="text-xs text-gray-600">إجمالي 30%</p>
-                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total30)}</p>
+                                                    <p className="font-bold text-gray-800">{formatCurrency(entityMetrics.total30)}</p>
                                                 </div>
-                                                <div>
+                                                <div className="text-right" dir="rtl">
                                                     <p className="text-xs text-gray-600">المتبقي 70%</p>
-                                                    <p className="font-bold text-gray-800" dir="ltr">{formatCurrency(entityMetrics.total70)}</p>
+                                                    <p className="font-bold text-gray-800">{formatCurrency(entityMetrics.total70)}</p>
                                                 </div>
-                                                <div>
+                                                <div className="text-right" dir="rtl">
                                                     <p className="text-xs text-gray-600">أقرب ميعاد للدفع</p>
                                                     {areAllLotsPaid ? (
                                                         <div className="flex flex-col">
@@ -4467,7 +4469,7 @@ const EntitiesView: React.FC<{
                                                             )}
                                                         </div>
                                                     ) : (
-                                                        <p className="font-bold text-red-600">{formatSpecificDateTime(closestDeadlineTimestamp)}</p>
+                                                        <p className="font-bold text-red-600">{formatDate(closestDeadlineTimestamp)}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -4524,7 +4526,7 @@ const EntitiesView: React.FC<{
                                                                                     )}
                                                                                 </div>
                                                                             ) : (
-                                                                                <p>آخر ميعاد للدفع: <span className="font-semibold text-red-600"> {formatSpecificDateTime(lotDeadline)}</span></p>
+                                                                                <p>آخر ميعاد للدفع: <span className="font-semibold text-red-600"> {formatDate(lotDeadline)}</span></p>
                                                                             )}
                                                                         </div>
 
