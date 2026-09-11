@@ -2,9 +2,6 @@ const CACHE_NAME = 'al3bara-v1';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/index.css',
-  '/index.tsx',
-  '/App.tsx',
   '/favicon.png',
   '/icon-192x192.png',
   '/icon-512x512.png',

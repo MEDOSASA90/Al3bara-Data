@@ -7,8 +7,8 @@
  * @returns {Promise<{success: boolean, url?: string, error?: any}>}
  */
 export async function uploadToDrive(base64String, fileName, mimeType = 'image/jpeg') {
-  // The Google Apps Script Web App URL - Updated to new deployment
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyc4HJRk5xcIkRB5DhBkCz6kQ-GkKp1XEKSrJmrCGRqO6BlKdOLq3CK-sCq5_DYe1u3/exec";
+  // The Google Apps Script Web App URL - Updated to include authorization secret
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyc4HJRk5xcIkRB5DhBkCz6kQ-GkKp1XEKSrJmrCGRqO6BlKdOLq3CK-sCq5_DYe1u3/exec?secret=medo01121510582";
   
   // The specific Google Drive Folder ID provided in the prompt
   // URL: https://drive.google.com/drive/folders/1EMDahJbGD69KSJiPtClHC8K1UscZOkq6

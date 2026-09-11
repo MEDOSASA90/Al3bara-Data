@@ -1,6 +1,5 @@
-// Updated to use Firebase SDK v9+ modular syntax to match the loaded library in index.html.
 import { initializeApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
@@ -23,8 +22,20 @@ export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,  // Important for mobile & restricted networks
 });
 
+// Enable Firestore Offline Persistence
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn("Firestore offline persistence failed: Multiple tabs open.");
+  } else if (err.code === 'unimplemented') {
+    console.warn("Firestore offline persistence failed: Browser doesn't support persistence.");
+  } else {
+    console.error("Firestore offline persistence error:", err);
+  }
+});
+
 export const auth = getAuth(app);
 export const storage = getStorage(app); 
 export const functions = getFunctions(app);
 
 export default app;
+
