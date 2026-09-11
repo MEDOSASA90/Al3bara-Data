@@ -1,20 +1,57 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# العبارة للتجارة والتوريدات — نسخة نظيفة (Al3bara-Clean)
 
-# Run and deploy your AI Studio app
+إعادة بناء كاملة ونظيفة للمشروع الأصلي بنفس القيمة والبيانات، بهندسة جاهزة للتوسع والأتمتة.
 
-This contains everything you need to run your app locally.
+## التشغيل
 
-View your app in AI Studio: https://ai.studio/apps/drive/1vKMHpBA3tQuALJkSBMr9JM8oaCrc-EsM
+```bash
+npm install
+npm run dev
+```
 
-## Run Locally
+متغيرات البيئة في `.env.local` (انسخ الشكل من `.env.example`):
 
-**Prerequisites:**  Node.js
+- `GEMINI_API_KEY` — مفتاح Gemini (اختياري)
+- `VITE_DRIVE_SCRIPT_URL` — رابط Apps Script للرفع على Drive
+- `VITE_DRIVE_FOLDER_ID` — مجلد Drive للصور
 
+البيانات تعيش على نفس مشروع Firebase ونفس أسماء الـ Collections
+(`advanceClients`, `workClients`, `entities`, `predefinedItems`, `predefinedBuyers`)
+— لا حاجة لأي ترحيل.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## البنية
+
+```
+src/
+  domain/        القواعد المالية pure (بدون React/Firebase)
+    constants.ts   الدمغة 10ج، العمولة 0.5%، مهلة 15 يوم، أسماء Collections
+    types.ts       كل الأنواع (ممنوع any)
+    finance.ts     حاسبة 30/70 ثنائية الاتجاه + العمولة + الأرصدة + المهل
+  data/          طبقة Firestore فقط
+    repositories.ts    اشتراكات live + كل عمليات CRUD بأنواع صريحة
+    commissionSync.ts  مزامنة عمولة المشتري (نفس سلوك الأصلي بالظبط)
+  hooks/         useAuth / useLiveQuery / useTheme
+  utils/         format, images (ضغط), driveUpload, brochureParser, print, ids
+  components/
+    ui/          Modal, Header, MetricCard, BalanceDisplay, SummaryPanel, ...
+    print/       reports.ts — كل تقارير HTML دوال pure بدون React
+  features/      شاشة لكل دومين + المودالات الخاصة بها
+    dashboard/ entities/ clients/ archive/ brochures/ auth/
+  App.tsx        توصيل فقط: state للتنقل والمودالات + استدعاء data/domain
+```
+
+## القواعد الذهبية للمساهمين (والأتمتة مستقبلاً)
+
+1. **ممنوع `any`** — البناء يفشل عبر `npm run check:no-any`. استخدم `unknown` + تضييق.
+2. **الحسابات في `domain/` فقط** — دوال pure تقبل أنواع الدومين وتُختبر بمعزل عن Firebase.
+3. **الـ UI يعرض فقط** — أي كتابة Firestore تتم عبر `data/repositories.ts`.
+4. **التقارير pure** — `components/print/reports.ts` بدون React لتُستخدم في الطباعة والأتمتة.
+5. **العقود بالإنجليزية، الواجهة بالعربية** — أسماء الدوال والأنواع إنجليزية، النصوص عربية RTL.
+
+## قواعد الحسابات (مطابقة للأصلي)
+
+- `base30 = round(total × 0.3)` ثم `value30 = base30 + 10 دمغة` و `value70 = total − base30`
+- عكساً: من 30 → `total = round(base / 0.3)`، من 70 → `total = round(val / 0.7)`
+- العمولة `0.5%` من اللوطات النشطة كحركة دائنة مرتبطة بالجهة (`entityId`)
+- مهلة سداد الـ 70% = تاريخ المزاد + 15 يوم
+- الموجب = مدين (مطلوب منه)، السالب = دائن (مدفوع مقدماً)

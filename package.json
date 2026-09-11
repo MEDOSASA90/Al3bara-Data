@@ -1,28 +1,31 @@
 {
-  "name": "العباره-للتجارة-والتوريدات",
+  "name": "al3bara-clean",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run check:no-any && tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "check:no-any": "node scripts/check-no-any.mjs"
   },
   "dependencies": {
-    "firebase": "^12.5.0",
-    "fs": "^0.0.1-security",
-    "googleapis": "^166.0.0",
+    "firebase": "^12.19.0",
     "pdfjs-dist": "^6.3.289",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "autoprefixer": "^10.4.14",
-    "postcss": "^8.4.24",
-    "tailwindcss": "^3.3.2",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.5.6",
+    "oxlint": "^1.81.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
   }
 }
