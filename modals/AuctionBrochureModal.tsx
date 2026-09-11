@@ -72,6 +72,9 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
         const key = getGeminiApiKey();
         setGeminiKey(key);
         setTempKeyInput(key);
+        if (key) {
+            saveGeminiApiKey(key);
+        }
     }, [isOpen]);
 
     // Available brochures (preloaded + any custom uploaded)
@@ -432,7 +435,7 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                                         : 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300 hover:bg-indigo-900'
                                 }`}
                             >
-                                <span>{geminiKey ? '✨ Gemini AI متصل' : '🔑 ربط Gemini API'}</span>
+                                <span>{geminiKey ? '✨ Gemini AI متصل تلقائياً' : '🔑 ربط Gemini API'}</span>
                             </button>
 
                             <label className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs px-4 py-2 rounded-xl cursor-pointer transition-all shadow-md flex items-center gap-2 hover:scale-[1.02]">
