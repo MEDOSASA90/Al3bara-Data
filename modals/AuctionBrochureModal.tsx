@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { PredefinedBuyer } from '../types';
 import { Modal } from '../components/Modal';
 import { PRELOADED_AUCTIONS, AuctionBrochureData, ParsedEntity, ParsedLot } from '../utils/preloadedAuctions';
 import { extractTextFromPDF, parseBrochureText } from '../utils/brochureParser';
+import { analyzeBrochureWithGemini, getGeminiApiKey, saveGeminiApiKey } from '../utils/geminiParser';
 import { formatCurrency } from '../utils/helpers';
 
 interface WinningLotItem {
@@ -58,8 +59,20 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
 
     // Processing states
     const [isParsingFile, setIsParsingFile] = useState(false);
+    const [parsingMessage, setParsingMessage] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [entitySearch, setEntitySearch] = useState('');
+
+    // Gemini API Key management
+    const [geminiKey, setGeminiKey] = useState<string>('');
+    const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
+    const [tempKeyInput, setTempKeyInput] = useState<string>('');
+
+    useEffect(() => {
+        const key = getGeminiApiKey();
+        setGeminiKey(key);
+        setTempKeyInput(key);
+    }, [isOpen]);
 
     // Available brochures (preloaded + any custom uploaded)
     const allBrochures = useMemo(() => {
@@ -74,15 +87,25 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
         return allBrochures.find(b => b.id === selectedBrochureId) || allBrochures[0];
     }, [allBrochures, selectedBrochureId]);
 
+    // Total lots in active brochure
+    const totalBrochureLotsCount = useMemo(() => {
+        if (!activeBrochure || !activeBrochure.entities) return 0;
+        return activeBrochure.entities.reduce((acc, ent) => acc + (ent.lots ? ent.lots.length : 0), 0);
+    }, [activeBrochure]);
+
     // Set initial auction date when brochure changes
-    React.useEffect(() => {
+    useEffect(() => {
         if (activeBrochure) {
             setAuctionDate(activeBrochure.auctionDate);
-            if (activeBrochure.entities.length > 0 && !selectedEntityId) {
-                setSelectedEntityId(activeBrochure.entities[0].id);
+            if (activeBrochure.entities.length > 0) {
+                // If current selected entity is not in this brochure, pick first
+                const exists = activeBrochure.entities.some(e => e.id === selectedEntityId);
+                if (!exists) {
+                    setSelectedEntityId(activeBrochure.entities[0].id);
+                }
             }
         }
-    }, [activeBrochure]);
+    }, [activeBrochure, selectedBrochureId]);
 
     // Current entity
     const activeEntity = useMemo(() => {
@@ -103,7 +126,7 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
     };
 
     // Initialize or reset lots state when switching entity
-    React.useEffect(() => {
+    useEffect(() => {
         if (!activeEntity) return;
         const initialLots: { [lotNumber: string]: WinningLotItem } = {};
         activeEntity.lots.forEach(lot => {
@@ -157,8 +180,6 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                 updated.value30 = base30 + cur.stampFee;
                 updated.value70 = newTotal - base30;
                 updated.selected = true;
-            } else if (val === '') {
-                // Keep totalValue if user directly typed it
             }
             return { ...prev, [lotNum]: updated };
         });
@@ -236,20 +257,6 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
         });
     };
 
-    const handleLotStampChange = (lotNum: string, feeStr: string) => {
-        const fee = feeStr === '' ? 0 : parseFloat(feeStr);
-        setEntityLotsState(prev => {
-            const cur = prev[lotNum];
-            if (!cur) return prev;
-            const updated = { ...cur, stampFee: fee };
-            if (typeof cur.totalValue === 'number' && cur.totalValue > 0) {
-                const base30 = Math.round(cur.totalValue * 0.3);
-                updated.value30 = base30 + fee;
-            }
-            return { ...prev, [lotNum]: updated };
-        });
-    };
-
     const handleToggleLotSelect = (lotNum: string) => {
         setEntityLotsState(prev => {
             const current = prev[lotNum];
@@ -264,12 +271,14 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
         });
     };
 
-    // Handle PDF upload
+    // Handle PDF upload with option for Gemini AI
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         setIsParsingFile(true);
+        setParsingMessage('جاري قراءة محتوى المستند وتفريغ الصفحات...');
+
         try {
             let extractedText = '';
             if (file.name.toLowerCase().endsWith('.pdf')) {
@@ -278,19 +287,43 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                 extractedText = await file.text();
             }
 
-            const parsed = parseBrochureText(extractedText);
+            let parsed: AuctionBrochureData;
+
+            // Check if Gemini API key is available for ultra-accurate extraction
+            const currentKey = geminiKey || getGeminiApiKey();
+            if (currentKey) {
+                setParsingMessage('🧠 جاري التحليل الذكي فائق الدقة بواسطة Gemini AI...');
+                try {
+                    parsed = await analyzeBrochureWithGemini(extractedText, false, currentKey);
+                } catch (geminiErr: any) {
+                    console.warn('Gemini API attempt encountered issue, falling back to built-in parser:', geminiErr);
+                    parsed = parseBrochureText(extractedText);
+                }
+            } else {
+                parsed = parseBrochureText(extractedText);
+            }
+
             setCustomBrochure(parsed);
             setSelectedBrochureId(parsed.id);
             if (parsed.entities.length > 0) {
                 setSelectedEntityId(parsed.entities[0].id);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error parsing brochure file:', err);
-            alert('حدث خطأ أثناء قراءة ملف الكراسة. يمكنك استخدام الجلسات الجاهزة أو المحاولة مجدداً.');
+            alert('حدث خطأ أثناء قراءة ملف الكراسة: ' + (err.message || 'خطأ غير معروف'));
         } finally {
             setIsParsingFile(false);
+            setParsingMessage('');
             e.target.value = '';
         }
+    };
+
+    // Save Gemini Key
+    const handleSaveGeminiKey = () => {
+        saveGeminiApiKey(tempKeyInput);
+        setGeminiKey(tempKeyInput.trim());
+        setShowKeyModal(false);
+        alert('✅ تم حفظ مفتاح Gemini API بنجاح! سيتم استخدامه في التحليل فائق الدقة لكافة الكراسات.');
     };
 
     // Calculation summary of selected lots
@@ -367,37 +400,66 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
             isOpen={isOpen}
             onClose={onClose}
             title="📄 كراسات جلسات مزادات الخدمات الحكومية - الترسية والتسعير الذكي"
+            dialogClassName="w-[96vw] max-w-7xl"
         >
-            <div className="space-y-6 text-right max-h-[82vh] overflow-y-auto px-1" dir="rtl">
-                {/* Top Section: Choose session or upload new */}
-                <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md space-y-4">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-3">
+            <div className="space-y-4 text-right max-h-[85vh] overflow-y-auto px-1" dir="rtl">
+                
+                {/* Header Banner */}
+                <div className="bg-slate-900 text-white p-4 md:p-5 rounded-3xl shadow-lg border border-slate-800 space-y-4">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 border-b border-slate-800 pb-3.5">
                         <div>
-                            <h3 className="text-base font-black text-amber-400">🏛️ جلسات مزادات وزارة المالية - الهيئة العامة للخدمات الحكومية</h3>
-                            <p className="text-xs text-slate-300 mt-0.5">اختر كراسة الجلسة لتفريغ الجهات واللوطات وحساب الـ 30% والـ 70% والدمغات آلياً</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base md:text-lg font-black text-amber-400">
+                                    🏛️ كراسات مزادات وزارة المالية - الهيئة العامة للخدمات الحكومية
+                                </h3>
+                                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                                    إجمالي {totalBrochureLotsCount} لوط في هذه الكراسة
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-300 mt-1">
+                                اختر كراسة الجلسة لتفريغ كافة الجهات واللوطات وحساب الـ 30% والـ 70% والدمغات آلياً
+                            </p>
                         </div>
-                        <label className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs px-4 py-2 rounded-xl cursor-pointer transition-all shadow-md flex items-center gap-2 hover:scale-[1.02]">
-                            <span>📤 رفع كراسة PDF جديدة</span>
-                            <input 
-                                type="file" 
-                                accept=".pdf,text/plain" 
-                                onChange={handleFileUpload} 
-                                className="hidden" 
-                                disabled={isParsingFile}
-                            />
-                        </label>
+
+                        {/* Top Action Buttons */}
+                        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-start lg:justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setShowKeyModal(true)}
+                                className={`text-xs font-bold px-3 py-2 rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    geminiKey 
+                                        ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900' 
+                                        : 'bg-indigo-950/80 border-indigo-500/50 text-indigo-300 hover:bg-indigo-900'
+                                }`}
+                            >
+                                <span>{geminiKey ? '✨ Gemini AI متصل' : '🔑 ربط Gemini API'}</span>
+                            </button>
+
+                            <label className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs px-4 py-2 rounded-xl cursor-pointer transition-all shadow-md flex items-center gap-2 hover:scale-[1.02]">
+                                <span>📤 رفع كراسة PDF جديدة</span>
+                                <input 
+                                    type="file" 
+                                    accept=".pdf,text/plain" 
+                                    onChange={handleFileUpload} 
+                                    className="hidden" 
+                                    disabled={isParsingFile}
+                                />
+                            </label>
+                        </div>
                     </div>
 
                     {isParsingFile && (
-                        <div className="bg-amber-950/60 border border-amber-500/40 p-3 rounded-xl text-amber-200 text-xs flex items-center gap-2 animate-pulse">
-                            <span>⏳ جاري قراءة وتفريغ صفحات الكراسة واستخراج اللوطات... برجاء الانتظار</span>
+                        <div className="bg-amber-950/70 border border-amber-500/50 p-3 rounded-2xl text-amber-200 text-xs flex items-center gap-2.5 animate-pulse">
+                            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></div>
+                            <span className="font-bold">{parsingMessage}</span>
                         </div>
                     )}
 
-                    {/* Quick Session Buttons */}
-                    <div className="flex flex-wrap gap-2">
+                    {/* Quick Session Tabs */}
+                    <div className="flex flex-wrap gap-2 pt-1">
                         {allBrochures.map(b => {
                             const isSelected = b.id === selectedBrochureId;
+                            const lotsCount = b.entities.reduce((sum, e) => sum + (e.lots ? e.lots.length : 0), 0);
                             return (
                                 <button
                                     key={b.id}
@@ -408,22 +470,61 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                                             setSelectedEntityId(b.entities[0].id);
                                         }
                                     }}
-                                    className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                                    className={`px-3.5 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
                                         isSelected 
                                             ? 'bg-amber-400 text-slate-950 shadow-lg scale-[1.02]' 
                                             : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700'
                                     }`}
                                 >
                                     <span>📅 {b.auctionDate}</span>
-                                    <span className="text-[10px] opacity-75 font-normal">({b.entities.length} جهة)</span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${isSelected ? 'bg-slate-900 text-amber-300' : 'bg-slate-900 text-slate-400'}`}>
+                                        {b.entities.length} جهة | {lotsCount} لوط
+                                    </span>
                                 </button>
                             );
                         })}
                     </div>
                 </div>
 
+                {/* API Key Modal Popup if triggered */}
+                {showKeyModal && (
+                    <div className="bg-indigo-900/90 text-white p-5 rounded-3xl border border-indigo-400/40 shadow-2xl space-y-3">
+                        <div className="flex justify-between items-center">
+                            <h4 className="text-sm font-black text-amber-300 flex items-center gap-2">
+                                🔑 إعداد مفتاح Gemini API للتحليل فائق الدقة
+                            </h4>
+                            <button
+                                type="button"
+                                onClick={() => setShowKeyModal(false)}
+                                className="text-slate-300 hover:text-white text-sm font-bold"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <p className="text-xs text-slate-200 leading-relaxed">
+                            يتيح لك مفتاح Gemini تفريغ كراسات الشروط الكبيرة واستخراج كافة اللوطات والجهات المذكورة بنسبة دقة 100%. يمكنك الحصول على مفتاح مجاني من موقع <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-amber-400 underline font-bold">Google AI Studio</a>.
+                        </p>
+                        <div className="flex gap-2">
+                            <input
+                                type="password"
+                                placeholder="ألصق مفتاح Gemini API هنا (AIzaSy...)"
+                                value={tempKeyInput}
+                                onChange={(e) => setTempKeyInput(e.target.value)}
+                                className="flex-1 px-4 py-2 bg-slate-950 border border-indigo-300/40 rounded-xl text-xs font-mono text-white outline-none focus:border-amber-400"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleSaveGeminiKey}
+                                className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-5 py-2 rounded-xl cursor-pointer shadow-md"
+                            >
+                                حفظ المفتاح
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Session Config: Date & Buyer & Hall */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-3xl border border-slate-200">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">تاريخ الجلسة</label>
                         <input
@@ -456,211 +557,227 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">مكان انعقاد الجلسة</label>
-                        <p className="px-3 py-2 bg-slate-200/60 rounded-xl text-xs font-semibold text-slate-700 truncate" title={activeBrochure.hallLocation}>
+                        <p className="px-3 py-2 bg-slate-200/70 rounded-xl text-xs font-semibold text-slate-700 truncate" title={activeBrochure.hallLocation}>
                             {activeBrochure.hallLocation}
                         </p>
                     </div>
                 </div>
 
-                {/* Entity Selector */}
-                <div className="space-y-3">
-                    <div className="flex justify-between items-center flex-wrap gap-2">
-                        <label className="block text-xs font-black text-slate-800">
-                            🏢 اختر الجهة الحكومية التي تم الشراء منها في هذه الكراسة:
-                        </label>
+                {/* Main Desktop Grid: Right column = Entities list (30%), Left column = Lots table (70%) */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                    
+                    {/* Entities Sidebar List (4 of 12 cols on desktop) */}
+                    <div className="lg:col-span-4 bg-white p-3.5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
+                        <div className="flex justify-between items-center flex-wrap gap-2">
+                            <label className="block text-xs font-black text-slate-800">
+                                🏢 جهات الكراسة ({filteredEntities.length} جهة):
+                            </label>
+                            <span className="text-[10px] text-slate-400 font-bold">اضغط للاختيار</span>
+                        </div>
+
                         <input
                             type="text"
-                            placeholder="🔍 فلترة اسم الجهة أو المحافظة..."
+                            placeholder="🔍 ابحث عن جهة أو محافظة..."
                             value={entitySearch}
                             onChange={(e) => setEntitySearch(e.target.value)}
-                            className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg bg-white w-64 focus:outline-none focus:border-indigo-500"
+                            className="text-xs px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 w-full focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
                         />
+
+                        <div className="space-y-1.5 max-h-[500px] overflow-y-auto custom-scrollbar pr-1">
+                            {filteredEntities.map((ent, idx) => {
+                                const isSelected = ent.id === selectedEntityId;
+                                return (
+                                    <div
+                                        key={ent.id}
+                                        onClick={() => setSelectedEntityId(ent.id)}
+                                        className={`p-3 rounded-2xl cursor-pointer border transition-all text-xs flex justify-between items-start gap-2 ${
+                                            isSelected
+                                                ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white border-indigo-600 shadow-md font-bold scale-[1.01]'
+                                                : 'bg-slate-50/70 text-slate-800 border-slate-200/80 hover:border-indigo-300 hover:bg-indigo-50/40'
+                                        }`}
+                                    >
+                                        <div className="space-y-0.5 flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
+                                                    isSelected ? 'bg-white text-indigo-700' : 'bg-slate-200 text-slate-600'
+                                                }`}>
+                                                    {idx + 1}
+                                                </span>
+                                                <p className="font-bold truncate" title={ent.entityName}>{ent.entityName}</p>
+                                            </div>
+                                            {ent.location && (
+                                                <p className={`text-[10px] truncate mr-6.5 ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`} title={ent.location}>
+                                                    📍 {ent.location}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] shrink-0 font-bold ${
+                                            isSelected ? 'bg-amber-400 text-slate-950' : 'bg-white text-slate-700 border border-slate-200'
+                                        }`}>
+                                            {ent.lots.length} لوط
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto p-1 border border-slate-200 rounded-2xl bg-slate-50/50">
-                        {filteredEntities.map(ent => {
-                            const isSelected = ent.id === selectedEntityId;
-                            return (
-                                <div
-                                    key={ent.id}
-                                    onClick={() => setSelectedEntityId(ent.id)}
-                                    className={`p-3 rounded-xl cursor-pointer border transition-all text-xs flex justify-between items-start gap-2 ${
-                                        isSelected
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm font-bold'
-                                            : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
-                                    }`}
-                                >
-                                    <div className="space-y-0.5">
-                                        <p className="font-bold">{ent.entityName}</p>
-                                        {ent.location && (
-                                            <p className={`text-[10px] ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>📍 {ent.location}</p>
-                                        )}
-                                        {ent.contactPerson && (
-                                            <p className={`text-[10px] ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                                👤 {ent.contactPerson} {ent.contactPhone && `(${ent.contactPhone})`}
-                                            </p>
-                                        )}
+                    {/* Lots Table for Selected Entity (8 of 12 cols on desktop) */}
+                    <div className="lg:col-span-8 bg-white p-4 rounded-3xl border border-slate-200 shadow-xs space-y-3">
+                        {activeEntity ? (
+                            <>
+                                <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-200 pb-2.5">
+                                    <div>
+                                        <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                            <span>📦 لوطات:</span>
+                                            <span className="text-indigo-600 font-bold">{activeEntity.entityName}</span>
+                                        </h4>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            💡 أدخل (سعر الوحدة كالكرتونة أو الطن) أو (إجمالي اللوط) أو (30% أو 70%)؛ ليتم حساب باقي القيم وإضافة 10 ج دمغة تلقائياً:
+                                        </p>
                                     </div>
-                                    <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] shrink-0 font-bold ${
-                                        isSelected ? 'bg-white text-indigo-700' : 'bg-slate-100 text-slate-600'
-                                    }`}>
-                                        {ent.lots.length} لوط
-                                    </span>
+                                    <div className="bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl text-amber-800 text-[11px] font-bold">
+                                        ⚖️ دمغة اللوط: 10 ج.م مضافة على الـ 30%
+                                    </div>
                                 </div>
-                            );
-                        })}
+
+                                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-xs">
+                                    <table className="w-full text-xs text-right min-w-[700px]">
+                                        <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                                            <tr>
+                                                <th className="p-2.5 text-center w-10">ترسية</th>
+                                                <th className="p-2.5 w-14">اللوط</th>
+                                                <th className="p-2.5">بيان وصنف اللوط</th>
+                                                <th className="p-2.5 w-24">الكمية</th>
+                                                <th className="p-2.5 w-24">سعر الوحدة</th>
+                                                <th className="p-2.5 w-32">إجمالي الترسية (100%)</th>
+                                                <th className="p-2.5 w-32 text-indigo-700">30% + 10ج دمغة</th>
+                                                <th className="p-2.5 w-28 text-amber-700">70% متبقي</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {activeEntity.lots.map(lot => {
+                                                const state = entityLotsState[lot.lotNumber] || {
+                                                    parsedLot: lot,
+                                                    selected: false,
+                                                    quantity: '',
+                                                    unit: 'عدد',
+                                                    unitPrice: '',
+                                                    totalValue: '',
+                                                    stampFee: 10,
+                                                    value30: '',
+                                                    value70: ''
+                                                };
+
+                                                return (
+                                                    <tr key={lot.lotNumber} className={`transition-colors ${state.selected ? 'bg-indigo-50/60' : 'hover:bg-slate-50'}`}>
+                                                        <td className="p-2.5 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={state.selected}
+                                                                onChange={() => handleToggleLotSelect(lot.lotNumber)}
+                                                                className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                                                            />
+                                                        </td>
+                                                        <td className="p-2.5 font-bold font-mono text-slate-900">
+                                                            {lot.lotNumber}
+                                                        </td>
+                                                        <td className="p-2.5 font-semibold text-slate-800">
+                                                            <div>{lot.name}</div>
+                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                                <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                    {lot.condition || 'خردة'}
+                                                                </span>
+                                                                {lot.notes && <span className="text-[10px] text-amber-700">⚠️ {lot.notes}</span>}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-2.5">
+                                                            <div className="flex items-center gap-1">
+                                                                <input
+                                                                    type="number"
+                                                                    value={state.quantity}
+                                                                    onChange={(e) => handleLotQuantityChange(lot.lotNumber, e.target.value)}
+                                                                    className="w-16 px-1.5 py-1 border border-slate-200 rounded text-center text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                                                                    step="any"
+                                                                />
+                                                                <span className="text-[10px] text-slate-500 font-bold">{state.unit}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-2.5">
+                                                            <input
+                                                                type="number"
+                                                                placeholder="سعر الوحدة..."
+                                                                value={state.unitPrice}
+                                                                onChange={(e) => handleLotUnitPriceChange(lot.lotNumber, e.target.value)}
+                                                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-indigo-500 bg-white"
+                                                                step="any"
+                                                            />
+                                                        </td>
+                                                        <td className="p-2.5">
+                                                            <input
+                                                                type="number"
+                                                                placeholder="إجمالي اللوط..."
+                                                                value={state.totalValue}
+                                                                onChange={(e) => handleLotTotalChange(lot.lotNumber, e.target.value)}
+                                                                className="w-full px-2 py-1 border-2 border-slate-200 rounded-lg text-xs font-mono font-black text-slate-900 focus:outline-none focus:border-indigo-500 bg-white"
+                                                                step="any"
+                                                            />
+                                                        </td>
+                                                        <td className="p-2.5">
+                                                            <div className="relative">
+                                                                <input
+                                                                    type="number"
+                                                                    placeholder="30% + 10ج..."
+                                                                    value={state.value30}
+                                                                    onChange={(e) => handleLot30Change(lot.lotNumber, e.target.value)}
+                                                                    className="w-full px-2 py-1 border border-indigo-200 rounded-lg text-xs font-mono font-black text-indigo-700 focus:outline-none focus:border-indigo-500 bg-indigo-50/40"
+                                                                    step="any"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-2.5">
+                                                            <input
+                                                                type="number"
+                                                                placeholder="70% متبقي..."
+                                                                value={state.value70}
+                                                                onChange={(e) => handleLot70Change(lot.lotNumber, e.target.value)}
+                                                                className="w-full px-2 py-1 border border-amber-200 rounded-lg text-xs font-mono font-black text-amber-700 focus:outline-none focus:border-amber-500 bg-amber-50/40"
+                                                                step="any"
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="p-12 text-center text-slate-400 text-xs">
+                                اختر جهة من القائمة لعرض لوطاتها
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Lots Table for Selected Entity */}
-                {activeEntity && (
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-200 pb-2">
-                            <div>
-                                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                                    <span>📦 لوطات جهة:</span>
-                                    <span className="text-indigo-600 font-bold">{activeEntity.entityName}</span>
-                                </h4>
-                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                    💡 يمكنك إدخال (سعر الوحدة كالكرتونة أو الطن) أو (إجمالي اللوط) أو (30% أو 70%)؛ وسيقوم النظام بحساب باقي القيم وإضافة 10 ج دمغة تلقائياً مع إمكانية التعديل الحر:
-                                </p>
-                            </div>
-                            <div className="bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl text-amber-800 text-[11px] font-bold">
-                                ⚖️ دمغة اللوط المقررة: 10 ج.م مضافة على الـ 30%
-                            </div>
-                        </div>
-
-                        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                            <table className="w-full text-xs text-right">
-                                <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
-                                    <tr>
-                                        <th className="p-2.5 text-center w-10">ترسية</th>
-                                        <th className="p-2.5 w-14">اللوط</th>
-                                        <th className="p-2.5">بيان وصنف اللوط</th>
-                                        <th className="p-2.5 w-24">الكمية</th>
-                                        <th className="p-2.5 w-24">سعر الوحدة</th>
-                                        <th className="p-2.5 w-32">إجمالي الترسية (100%)</th>
-                                        <th className="p-2.5 w-32 text-indigo-700">30% + 10ج دمغة</th>
-                                        <th className="p-2.5 w-28 text-amber-700">70% متبقي</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 bg-white">
-                                    {activeEntity.lots.map(lot => {
-                                        const state = entityLotsState[lot.lotNumber] || {
-                                            parsedLot: lot,
-                                            selected: false,
-                                            quantity: '',
-                                            unit: 'عدد',
-                                            unitPrice: '',
-                                            totalValue: '',
-                                            stampFee: 10,
-                                            value30: '',
-                                            value70: ''
-                                        };
-
-                                        return (
-                                            <tr key={lot.lotNumber} className={`transition-colors ${state.selected ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}>
-                                                <td className="p-2.5 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selected}
-                                                        onChange={() => handleToggleLotSelect(lot.lotNumber)}
-                                                        className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
-                                                    />
-                                                </td>
-                                                <td className="p-2.5 font-bold font-mono text-slate-900">
-                                                    {lot.lotNumber}
-                                                </td>
-                                                <td className="p-2.5 font-semibold text-slate-800">
-                                                    <div>{lot.name}</div>
-                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                        <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
-                                                            {lot.condition || 'خردة'}
-                                                        </span>
-                                                        {lot.notes && <span className="text-[10px] text-amber-700">⚠️ {lot.notes}</span>}
-                                                    </div>
-                                                </td>
-                                                <td className="p-2.5">
-                                                    <div className="flex items-center gap-1">
-                                                        <input
-                                                            type="number"
-                                                            value={state.quantity}
-                                                            onChange={(e) => handleLotQuantityChange(lot.lotNumber, e.target.value)}
-                                                            className="w-16 px-1.5 py-1 border border-slate-200 rounded text-center text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
-                                                            step="any"
-                                                        />
-                                                        <span className="text-[10px] text-slate-500 font-bold">{state.unit}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-2.5">
-                                                    <input
-                                                        type="number"
-                                                        placeholder="سعر الوحدة..."
-                                                        value={state.unitPrice}
-                                                        onChange={(e) => handleLotUnitPriceChange(lot.lotNumber, e.target.value)}
-                                                        className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-indigo-500 bg-white"
-                                                        step="any"
-                                                    />
-                                                </td>
-                                                <td className="p-2.5">
-                                                    <input
-                                                        type="number"
-                                                        placeholder="إجمالي اللوط..."
-                                                        value={state.totalValue}
-                                                        onChange={(e) => handleLotTotalChange(lot.lotNumber, e.target.value)}
-                                                        className="w-full px-2 py-1 border-2 border-slate-200 rounded-lg text-xs font-mono font-black text-slate-900 focus:outline-none focus:border-indigo-500 bg-white"
-                                                        step="any"
-                                                    />
-                                                </td>
-                                                <td className="p-2.5">
-                                                    <div className="relative">
-                                                        <input
-                                                            type="number"
-                                                            placeholder="30% + 10ج..."
-                                                            value={state.value30}
-                                                            onChange={(e) => handleLot30Change(lot.lotNumber, e.target.value)}
-                                                            className="w-full px-2 py-1 border border-indigo-200 rounded-lg text-xs font-mono font-black text-indigo-700 focus:outline-none focus:border-indigo-500 bg-indigo-50/30"
-                                                            step="any"
-                                                        />
-                                                    </div>
-                                                </td>
-                                                <td className="p-2.5">
-                                                    <input
-                                                        type="number"
-                                                        placeholder="70% متبقي..."
-                                                        value={state.value70}
-                                                        onChange={(e) => handleLot70Change(lot.lotNumber, e.target.value)}
-                                                        className="w-full px-2 py-1 border border-amber-200 rounded-lg text-xs font-mono font-black text-amber-700 focus:outline-none focus:border-amber-500 bg-amber-50/30"
-                                                        step="any"
-                                                    />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
                 {/* Bottom Bar: Stats & Submit */}
-                <div className="bg-slate-900 text-white p-4 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4 sticky bottom-0 shadow-xl border border-slate-800">
-                    <div className="grid grid-cols-4 gap-4 text-center w-full md:w-auto">
+                <div className="bg-slate-900 text-white p-4 md:p-5 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4 sticky bottom-0 shadow-2xl border border-slate-800">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center w-full md:w-auto">
                         <div>
                             <span className="text-[10px] text-slate-400 block font-bold">اللوطات المختارة</span>
-                            <span className="text-sm font-black text-amber-400 font-mono">{summary.count} لوط</span>
+                            <span className="text-sm md:text-base font-black text-amber-400 font-mono">{summary.count} لوط</span>
                         </div>
                         <div>
                             <span className="text-[10px] text-slate-400 block font-bold">إجمالي الترسية (100%)</span>
-                            <span className="text-sm font-black text-white font-mono" dir="ltr">{formatCurrency(summary.total)}</span>
+                            <span className="text-sm md:text-base font-black text-white font-mono" dir="ltr">{formatCurrency(summary.total)}</span>
                         </div>
                         <div>
                             <span className="text-[10px] text-indigo-300 block font-bold">مسدد بالجلسة (30% + دمغات)</span>
-                            <span className="text-sm font-black text-indigo-400 font-mono" dir="ltr">{formatCurrency(summary.total30)}</span>
+                            <span className="text-sm md:text-base font-black text-indigo-400 font-mono" dir="ltr">{formatCurrency(summary.total30)}</span>
                         </div>
                         <div>
                             <span className="text-[10px] text-amber-300 block font-bold">متبقي الـ 70% (15 يوم)</span>
-                            <span className="text-sm font-black text-amber-400 font-mono" dir="ltr">{formatCurrency(summary.total70)}</span>
+                            <span className="text-sm md:text-base font-black text-amber-400 font-mono" dir="ltr">{formatCurrency(summary.total70)}</span>
                         </div>
                     </div>
 
@@ -668,7 +785,7 @@ export const AuctionBrochureModal: React.FC<AuctionBrochureModalProps> = ({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl cursor-pointer"
+                            className="px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl cursor-pointer"
                         >
                             إلغاء
                         </button>

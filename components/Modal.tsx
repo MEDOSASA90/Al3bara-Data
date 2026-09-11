@@ -29,7 +29,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
             onClick={onClose}
         >
             <div 
-                className={`rounded-3xl shadow-2xl border bg-white border-slate-200/80 w-full max-w-md transform transition-all duration-300 scale-100`} 
+                className={`rounded-3xl shadow-2xl border bg-white border-slate-200/80 w-full ${dialogClassName || 'max-w-md'} transform transition-all duration-300 scale-100`} 
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}

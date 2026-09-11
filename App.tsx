@@ -293,7 +293,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fadeIn" onClick={onClose}>
-            <div className={`rounded-2xl shadow-2xl w-full max-w-md transform transition-all duration-300 scale-100 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-white/10 text-slate-800 dark:text-slate-100 ${dialogClassName || ''}`} onClick={e => e.stopPropagation()}>
+            <div className={`rounded-2xl shadow-2xl w-full ${dialogClassName || 'max-w-md'} transform transition-all duration-300 scale-100 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-white/10 text-slate-800 dark:text-slate-100`} onClick={e => e.stopPropagation()}>
                 <div className="p-5 border-b flex justify-between items-center border-slate-150 dark:border-white/5 bg-gradient-to-r from-slate-50/50 to-gray-50/50 dark:from-slate-950/40 dark:to-slate-950/20">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8.5 h-8.5 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/10">
