@@ -59,8 +59,9 @@ function blankLineRow(): SaleLineFormRow {
 }
 
 function rowTotal(row: SaleLineFormRow): number {
-  const qty = typeof row.quantity === 'number' ? row.quantity : 0;
   const price = typeof row.unitPrice === 'number' ? row.unitPrice : 0;
+  if (row.mode === 'lot') return price;
+  const qty = typeof row.quantity === 'number' ? row.quantity : 0;
   return qty * price;
 }
 
@@ -209,8 +210,8 @@ export function SalesModal(props: SalesModalProps): ReactNode {
         lines: rows.map((r) => ({
           name: r.name.trim(),
           mode: r.mode,
-          quantity: Number(r.quantity),
-          unit: r.unit.trim() === '' ? undefined : r.unit.trim(),
+          quantity: r.mode === 'lot' ? 1 : Number(r.quantity),
+          unit: r.mode === 'lot' ? undefined : (r.unit.trim() === '' ? undefined : r.unit.trim()),
           unitPrice: Number(r.unitPrice),
         })),
         dateInput: saleDate,
@@ -340,9 +341,15 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                         📦 لوط
                       </button>
                     </div>
-                    <input value={row.unit} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unit: e.target.value } : r)))} placeholder="الوحدة (اختياري)" className="input" />
-                    <input type="number" min={0} step="any" value={row.quantity} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, quantity: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder={row.mode === 'lot' ? 'الكمية (لوط)' : 'الكمية (طن)'} className="input" />
-                    <input type="number" min={0} step="any" value={row.unitPrice} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPrice: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder={row.mode === 'lot' ? 'سعر اللوط' : 'سعر الطن'} className="input" />
+                    {row.mode === 'lot' ? (
+                      <input type="number" min={0} step="any" value={row.unitPrice} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPrice: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder="إجمالي سعر اللوط" className="input" />
+                    ) : (
+                      <>
+                        <input value={row.unit} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unit: e.target.value } : r)))} placeholder="الوحدة (اختياري)" className="input" />
+                        <input type="number" min={0} step="any" value={row.quantity} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, quantity: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder="الكمية (طن)" className="input" />
+                        <input type="number" min={0} step="any" value={row.unitPrice} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPrice: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder="سعر الطن" className="input" />
+                      </>
+                    )}
                   </div>
                   <p className="text-[11px] font-bold text-slate-500">
                     الإجمالي: <span className="font-mono" dir="ltr">{rowTotal(row).toFixed(2)}</span>
