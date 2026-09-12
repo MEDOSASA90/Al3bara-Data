@@ -3,6 +3,8 @@ import type { Client, Entity, Lot, Transaction } from '../../domain/types';
 import { clientBalance, groupTransactionsByDay } from '../../domain/finance';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { BalanceDisplay } from '../../components/ui/BalanceDisplay';
+import { AnalysisModal } from '../ai/AnalysisModal';
+import { summarizeClient } from '../../ai/sectionAnalysis';
 
 export type ArchiveBalanceFilter = 'all' | 'debit' | 'credit';
 
@@ -35,11 +37,13 @@ export interface ArchiveMenuViewProps {
 
 function ArchivedClientCard(props: {
   client: Client;
+  scopeLabel: string;
   onRestore: (client: Client) => void;
   onExportClient: (client: Client) => void;
 }): ReactNode {
-  const { client, onRestore, onExportClient } = props;
+  const { client, scopeLabel, onRestore, onExportClient } = props;
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const total = clientBalance(client);
   const groups = useMemo(() => groupTransactionsByDay(client.transactions ?? []), [client.transactions]);
 
@@ -83,6 +87,19 @@ function ArchivedClientCard(props: {
           >
             🖨️ كشف حساب
           </button>
+          <button
+            type="button"
+            onClick={() => setShowAnalysis(true)}
+            className="cursor-pointer rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
+          >
+            ✨ تحليل
+          </button>
+          <AnalysisModal
+            isOpen={showAnalysis}
+            onClose={() => setShowAnalysis(false)}
+            title={`✨ تحليل حساب ${client.name}`}
+            run={() => summarizeClient(client, `أرشيف ${scopeLabel}`)}
+          />
         </div>
       </div>
 
@@ -196,7 +213,7 @@ export function ArchiveClientsView(props: ArchiveClientsViewProps): ReactNode {
       {filteredClients.length > 0 ? (
         <div className="space-y-4">
           {filteredClients.map((client) => (
-            <ArchivedClientCard key={client.id} client={client} onRestore={onRestore} onExportClient={onExportClient} />
+            <ArchivedClientCard key={client.id} client={client} scopeLabel={kindLabel} onRestore={onRestore} onExportClient={onExportClient} />
           ))}
         </div>
       ) : (

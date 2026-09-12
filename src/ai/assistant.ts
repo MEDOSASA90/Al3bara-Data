@@ -1,4 +1,4 @@
-import type { Client, Entity } from '../domain/types';
+import type { Client, Entity, Partnership } from '../domain/types';
 import { activeLotsTotal, clientBalance, daysUntilDeadline, isLotUnpaid } from '../domain/finance';
 import { generateText } from './geminiClient';
 
@@ -18,6 +18,13 @@ function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Optional extra context for the business snapshot (backward compatible). */
+export interface BusinessSnapshotExtras {
+  partnerships?: Partnership[];
+  archivedCounts?: { lots: number; advances: number; work: number };
+  rejectedCount?: number;
+}
+
 /**
  * Arabic compact summary of the whole business for AI context:
  * totals, unpaid-70 lots + overdue, top debtors, recent activity.
@@ -26,6 +33,7 @@ export function buildBusinessSnapshot(
   entities: Entity[],
   advanceClients: Client[],
   workClients: Client[],
+  extras?: BusinessSnapshotExtras,
 ): string {
   const now = new Date();
   const activeEntities = entities.filter((entity) => entity.lots.some((lot) => !lot.isArchived));
@@ -96,6 +104,25 @@ export function buildBusinessSnapshot(
       const kind = tx.amount > 0 ? 'مدين' : 'دائن';
       lines.push(`- ${tx.clientName}: ${kind} ${formatMoney(Math.abs(tx.amount))} بتاريخ ${formatDate(tx.date.toDate())}`);
     }
+  }
+
+  const partnerships = extras?.partnerships ?? [];
+  if (partnerships.length > 0) {
+    const active = partnerships.filter((p) => p.status === 'active').length;
+    lines.push(`الشراكات: ${partnerships.length} (نشطة: ${active})`);
+    for (const p of partnerships.slice(0, 5)) {
+      const partnerNames = p.partners.map((partner) => partner.name).join('، ') || 'بدون شركاء';
+      lines.push(`- ${p.name} [${p.status === 'active' ? 'نشطة' : 'مسواة'}] مع ${partnerNames}`);
+    }
+  }
+
+  const archived = extras?.archivedCounts;
+  if (archived) {
+    lines.push(`الأرشيف: لوطات ${archived.lots}، سلف ${archived.advances}، شغل ${archived.work}`);
+  }
+
+  if (extras?.rejectedCount !== undefined && extras.rejectedCount > 0) {
+    lines.push(`لوطات مرفوضة (خسرناها): ${extras.rejectedCount}`);
   }
 
   return lines.join('\n');

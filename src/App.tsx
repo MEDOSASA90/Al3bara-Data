@@ -1104,8 +1104,17 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   );
 
   const businessSnapshot = useMemo(
-    () => buildBusinessSnapshot(entities, advanceClients, workClients),
-    [entities, advanceClients, workClients],
+    () =>
+      buildBusinessSnapshot(entities, advanceClients, workClients, {
+        partnerships,
+        archivedCounts: {
+          lots: archivedLotEntries.length,
+          advances: archivedAdvances.length,
+          work: archivedWork.length,
+        },
+        rejectedCount: rejectedLots.length,
+      }),
+    [entities, advanceClients, workClients, partnerships, archivedLotEntries, archivedAdvances, archivedWork, rejectedLots],
   );
 
   /* ----- render ----- */

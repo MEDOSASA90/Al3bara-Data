@@ -3,6 +3,8 @@ import type { Client, ClientType, Transaction } from '../../domain/types';
 import { clientBalance, groupTransactionsByDay, summarizeTransactions } from '../../domain/finance';
 import { formatCurrency, formatDate, getDirectImageUrl } from '../../utils/format';
 import { BalanceDisplay } from '../../components/ui/BalanceDisplay';
+import { AnalysisModal } from '../ai/AnalysisModal';
+import { summarizeClient } from '../../ai/sectionAnalysis';
 
 export type ClientBalanceFilter = 'all' | 'debit' | 'credit' | 'zero';
 
@@ -379,6 +381,7 @@ function ClientCard(props: ClientCardProps): ReactNode {
     onSettleClient,
   } = props;
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const [showPhoneDropdown, setShowPhoneDropdown] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
@@ -487,6 +490,13 @@ function ClientCard(props: ClientCardProps): ReactNode {
           </button>
           <button
             type="button"
+            onClick={() => setShowAnalysis(true)}
+            className="cursor-pointer rounded-xl border border-indigo-200/60 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-300"
+          >
+            ✨ تحليل ذكي
+          </button>
+          <button
+            type="button"
             onClick={() => onAddPayment(client)}
             className="cursor-pointer rounded-xl border border-emerald-200/50 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
           >
@@ -507,6 +517,12 @@ function ClientCard(props: ClientCardProps): ReactNode {
             حذف
           </button>
         </div>
+        <AnalysisModal
+          isOpen={showAnalysis}
+          onClose={() => setShowAnalysis(false)}
+          title={`✨ تحليل حساب ${client.name}`}
+          run={() => summarizeClient(client, kind === 'work' ? 'شغل' : 'سلف')}
+        />
       </div>
 
       {isExpanded ? (

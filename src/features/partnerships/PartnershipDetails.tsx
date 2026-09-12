@@ -9,6 +9,8 @@ import { SupplierModal } from './SupplierModal';
 import { SalesModal, type PartnershipSaleFormData, type SalePaymentFormData } from './SalesModal';
 import { BuyersModal, type NewBuyerFormData } from './BuyersModal';
 import type { BuyerTopUpFormData } from './BuyerAccountModal';
+import { AnalysisModal } from '../ai/AnalysisModal';
+import { summarizePartnership } from '../../ai/sectionAnalysis';
 
 export interface SupplierPaymentFormData {
   amount: number;
@@ -84,6 +86,7 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   } = props;
 
   const [settlementOpen, setSettlementOpen] = useState(false);
+  const [showPartnershipAnalysis, setShowPartnershipAnalysis] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   type DetailsSection = 'items' | 'ledger' | 'supplier' | 'sales' | 'buyers';
@@ -156,6 +159,9 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         </div>
         <button type="button" onClick={onPrint} className="btn-ghost">
           🖨️ كشف حساب
+        </button>
+        <button type="button" onClick={() => setShowPartnershipAnalysis(true)} className="btn-ghost">
+          ✨ تحليل ذكي
         </button>
         {p.status === 'active' && Math.abs(myDue) >= 0.01 && (
           <button type="button" onClick={onSettle} className="btn-primary">
@@ -460,6 +466,12 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
       />
       ) : null}
 
+      <AnalysisModal
+        isOpen={showPartnershipAnalysis}
+        onClose={() => setShowPartnershipAnalysis(false)}
+        title={`✨ تحليل شراكة ${p.name}`}
+        run={() => summarizePartnership(p)}
+      />
       <ItemModal
         isOpen={itemModal.open}
         item={editingItem}
