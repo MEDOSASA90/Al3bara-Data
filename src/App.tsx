@@ -25,11 +25,13 @@ import {
   createPredefinedBuyer,
   createPredefinedItem,
   createRejectedLot,
+  createShareLink,
   deleteClient,
   deleteEntity,
   deletePartnership,
   deleteRejectedLot,
   restoreClient,
+  revokeShareLink,
   setClientTransactions,
   setEntityLots,
   setPartnershipItems,
@@ -42,6 +44,7 @@ import {
   subscribeToPredefinedBuyers,
   subscribeToPredefinedItems,
   subscribeToRejectedLots,
+  subscribeToShareLinks,
   updateEntityMeta,
   updatePartnershipMeta,
 } from './data/repositories';
@@ -58,6 +61,7 @@ import type {
   PartnershipTx,
   RejectedLot,
   SessionUser,
+  ShareLink,
   SupplierPayment,
   Transaction,
   ViewMode,
@@ -82,6 +86,7 @@ import { LoadingModal, type LoadingFormData } from './features/entities/LoadingM
 import { ClientsView } from './features/clients/ClientsView';
 import { PartnershipsView } from './features/partnerships/PartnershipsView';
 import { PartnershipDetails, type SupplierPaymentFormData } from './features/partnerships/PartnershipDetails';
+import { ShareView } from './features/partnerships/ShareView';
 import { PartnershipModal, type PartnershipFormData } from './features/partnerships/PartnershipModal';
 import type { PartnershipItemFormData } from './features/partnerships/ItemModal';
 import type { PartnershipTxFormData } from './features/partnerships/TxModal';
@@ -191,7 +196,14 @@ const VIEW_TITLES: Record<ViewMode, string> = {
   archiveAdvances: 'أرشيف السلف',
 };
 
+/** Public partner share route: #/share/TOKEN (viewed without login). */
+function shareTokenFromHash(): string | null {
+  const match = window.location.hash.match(/^#\/share\/([A-Za-z0-9-]+)/);
+  return match?.[1] ?? null;
+}
+
 function viewFromHash(): ViewMode {
+  if (shareTokenFromHash() !== null) return 'dashboard';
   const hash = window.location.hash.replace('#', '');
   const known: ViewMode[] = ['dashboard', 'entities', 'advances', 'work', 'partnerships', 'archiveMenu', 'archiveEntities', 'archiveWork', 'archiveAdvances'];
   return known.includes(hash as ViewMode) ? (hash as ViewMode) : 'dashboard';
@@ -279,6 +291,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     partnership: null,
   });
   const [openPartnershipId, setOpenPartnershipId] = useState<string | null>(null);
+  const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [deletePartnershipId, setDeletePartnershipId] = useState<string | null>(null);
   const [deleteClientReq, setDeleteClientReq] = useState<{ kind: ClientType; id: string } | null>(null);
   const [deleteLotReq, setDeleteLotReq] = useState<{ entityId: string; lotId: string } | null>(null);
@@ -533,6 +546,28 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   useEffect(() => {
     if (viewMode !== 'partnerships') setOpenPartnershipId(null);
   }, [viewMode]);
+
+  useEffect(() => {
+    if (!openPartnershipId) {
+      setShareLinks([]);
+      return;
+    }
+    const unsubscribe = subscribeToShareLinks(
+      openPartnershipId,
+      (links) => setShareLinks(links),
+      (error) => console.error('Share links sync failed:', error),
+    );
+    return unsubscribe;
+  }, [openPartnershipId]);
+
+  const handleCreateShareLink = useCallback(async (): Promise<void> => {
+    if (!openPartnershipId) return;
+    await createShareLink(openPartnershipId);
+  }, [openPartnershipId]);
+
+  const handleRevokeShareLink = useCallback(async (token: string): Promise<void> => {
+    await revokeShareLink(token);
+  }, []);
 
   const syncPartner = useCallback(
     async (partnership: Partnership): Promise<void> => {
@@ -899,6 +934,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
               onSaveSupplierPayment={(data, existingId) => void handleSaveSupplierPayment(open.id, data, existingId)}
               onDeleteSupplierPayment={(paymentId) => void handleDeleteSupplierPayment(open.id, paymentId)}
               onSaveSupplierName={(name) => void handleSaveSupplierName(open.id, name)}
+              shareLinks={shareLinks}
+              onCreateShareLink={() => void handleCreateShareLink()}
+              onRevokeShareLink={(token) => void handleRevokeShareLink(token)}
             />
           );
         }
@@ -1149,12 +1187,20 @@ export default function App(): ReactNode {
   const { user, authLoading, login, logout, loginError } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [viewMode, setViewMode] = useState<ViewMode>(() => viewFromHash());
+  const [shareToken, setShareToken] = useState<string | null>(() => shareTokenFromHash());
   const [loginBusy, setLoginBusy] = useState(false);
 
   useEffect(() => {
-    const onPopState = (): void => setViewMode(viewFromHash());
+    const onPopState = (): void => {
+      setViewMode(viewFromHash());
+      setShareToken(shareTokenFromHash());
+    };
     window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    window.addEventListener('hashchange', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('hashchange', onPopState);
+    };
   }, []);
 
   const navigate = useCallback((view: ViewMode): void => {
@@ -1180,6 +1226,10 @@ export default function App(): ReactNode {
 
   if (authLoading) {
     return <SplashScreen />;
+  }
+
+  if (shareToken !== null) {
+    return <ShareView token={shareToken} />;
   }
 
   if (!user) {

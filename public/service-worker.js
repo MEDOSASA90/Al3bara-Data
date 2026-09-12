@@ -1,4 +1,4 @@
-const CACHE_NAME = 'al3bara-v1';
+const CACHE_NAME = 'al3bara-v2';
 const urlsToCache = [
   '/',
   '/index.html',

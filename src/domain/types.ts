@@ -222,6 +222,14 @@ export interface Partnership {
 /** Reserved party id for the app user. */
 export const ME_PARTY_ID = 'me';
 
+/** Public read-only share link for a partnership (viewed without login). */
+export interface ShareLink {
+  token: string;
+  partnershipId: string;
+  createdAt: Timestamp;
+  revoked?: boolean;
+}
+
 export interface PartyRef {
   id: string;
   name: string;

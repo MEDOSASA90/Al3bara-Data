@@ -3,10 +3,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -29,6 +31,7 @@ import type {
   PredefinedBuyer,
   PredefinedItem,
   RejectedLot,
+  ShareLink,
   SupplierPayment,
   Transaction,
 } from '../domain/types';
@@ -532,6 +535,66 @@ export async function settlePartnership(
 
 export async function deletePartnership(partnershipId: string): Promise<void> {
   await deleteDoc(doc(db, COLLECTIONS.partnerships, partnershipId));
+}
+
+/* ---------- partner share links (public read-only) ---------- */
+
+export function toShareLink(token: string, data: DocumentData): ShareLink {
+  return {
+    token,
+    partnershipId: typeof data['partnershipId'] === 'string' ? (data['partnershipId'] as string) : '',
+    createdAt: data['createdAt'] as ShareLink['createdAt'],
+    revoked: data['revoked'] === true,
+  };
+}
+
+/** Creates a public share token for a partnership. Returns the token. */
+export async function createShareLink(partnershipId: string): Promise<string> {
+  const token = crypto.randomUUID();
+  await setDoc(doc(db, COLLECTIONS.shareLinks, token), {
+    partnershipId,
+    createdAt: Timestamp.now(),
+  });
+  return token;
+}
+
+export async function revokeShareLink(token: string): Promise<void> {
+  await updateDoc(doc(db, COLLECTIONS.shareLinks, token), { revoked: true });
+}
+
+export function subscribeToShareLinks(
+  partnershipId: string,
+  onData: (links: ShareLink[]) => void,
+  onError: (error: Error) => void,
+): Unsubscribe {
+  const ref = query(collection(db, COLLECTIONS.shareLinks), where('partnershipId', '==', partnershipId));
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      const links = snapshot.docs.map((d) => toShareLink(d.id, d.data()));
+      links.sort((a, b) => {
+        const ta = typeof a.createdAt?.toMillis === 'function' ? a.createdAt.toMillis() : 0;
+        const tb = typeof b.createdAt?.toMillis === 'function' ? b.createdAt.toMillis() : 0;
+        return tb - ta;
+      });
+      onData(links);
+    },
+    (error) => onError(error as Error),
+  );
+}
+
+/** Public single-doc read (works without login when rules allow). */
+export async function getShareLink(token: string): Promise<ShareLink | null> {
+  const snapshot = await getDoc(doc(db, COLLECTIONS.shareLinks, token));
+  if (!snapshot.exists()) return null;
+  return toShareLink(snapshot.id, snapshot.data());
+}
+
+/** Public single-doc read (works without login when rules allow). */
+export async function getPartnershipDoc(partnershipId: string): Promise<Partnership | null> {
+  const snapshot = await getDoc(doc(db, COLLECTIONS.partnerships, partnershipId));
+  if (!snapshot.exists()) return null;
+  return toPartnership(snapshot.id, snapshot.data());
 }
 
 /* ---------- predefined lists ---------- */

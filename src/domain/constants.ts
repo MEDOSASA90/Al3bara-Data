@@ -19,6 +19,7 @@ export const COLLECTIONS = {
   predefinedBuyers: 'predefinedBuyers',
   rejectedLots: 'rejectedLots',
   partnerships: 'partnerships',
+  shareLinks: 'shareLinks',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

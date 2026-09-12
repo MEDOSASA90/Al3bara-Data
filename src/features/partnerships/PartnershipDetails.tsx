@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Payer, Partnership, PartyRef } from '../../domain/types';
+import type { Payer, Partnership, PartyRef, ShareLink } from '../../domain/types';
 import { itemBuyCost, itemQuantity, partnershipSettlement, supplierBalance, supplierTotals } from '../../domain/finance';
 import { formatCurrency, formatDate, todayDateInput } from '../../utils/format';
 import { ItemModal, type PartnershipItemFormData } from './ItemModal';
@@ -27,6 +27,9 @@ interface PartnershipDetailsProps {
   onSaveSupplierPayment: (data: SupplierPaymentFormData, existingId: string | null) => void;
   onDeleteSupplierPayment: (paymentId: string) => void;
   onSaveSupplierName: (name: string) => void;
+  shareLinks: ShareLink[];
+  onCreateShareLink: () => void;
+  onRevokeShareLink: (token: string) => void;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -68,7 +71,34 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
     onSaveSupplierPayment,
     onDeleteSupplierPayment,
     onSaveSupplierName,
+    shareLinks,
+    onCreateShareLink,
+    onRevokeShareLink,
   } = props;
+
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  function shareUrl(token: string): string {
+    return `${window.location.origin}${window.location.pathname}#/share/${token}`;
+  }
+
+  async function copyShareUrl(token: string): Promise<void> {
+    const url = shareUrl(token);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = url;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      document.body.removeChild(area);
+    }
+    setCopiedToken(token);
+    window.setTimeout(() => setCopiedToken((current) => (current === token ? null : current)), 2000);
+  }
 
   const [itemModal, setItemModal] = useState<{ open: boolean; itemId: string | null }>({ open: false, itemId: null });
   const [txModal, setTxModal] = useState<{ open: boolean; txId: string | null }>({ open: false, txId: null });
@@ -191,6 +221,14 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         <button type="button" onClick={onPrint} className="btn-ghost">
           🖨️ كشف حساب
         </button>
+        <button
+          type="button"
+          onClick={() => setShareOpen((current) => !current)}
+          aria-expanded={shareOpen}
+          className="btn-ghost"
+        >
+          🔗 مشاركة
+        </button>
         <button type="button" onClick={onEditMeta} className="btn-ghost">
           تعديل
         </button>
@@ -199,9 +237,62 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         </button>
       </div>
 
-      {/* Settlement card */}
+      {shareOpen ? (
+        <div className="card card-pad">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-black text-slate-900 dark:text-white">🔗 لينكات المشاركة (اطلاع فقط)</h2>
+            <button type="button" onClick={onCreateShareLink} className="btn-primary">
+              + لينك جديد
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            الشريك يفتح اللينك بدون حساب ويشوف البضاعة والمصاريف والتكاليف كاملة — بدون أي تعديل.
+          </p>
+          {shareLinks.length > 0 ? (
+            <div className="space-y-2">
+              {shareLinks.map((link) => (
+                <div key={link.token} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 p-2.5 text-xs dark:border-slate-700">
+                  <span className="font-mono" dir="ltr">{shareUrl(link.token).slice(-12)}…</span>
+                  {link.revoked === true ? (
+                    <span className="chip">⛔ موقوف</span>
+                  ) : (
+                    <span className="chip-credit">🟢 شغال</span>
+                  )}
+                  {link.revoked !== true ? (
+                    <>
+                      <button type="button" onClick={() => void copyShareUrl(link.token)} className="btn-ghost">
+                        {copiedToken === link.token ? '✅ اتنسخ' : '📋 نسخ'}
+                      </button>
+                      <button type="button" onClick={() => onRevokeShareLink(link.token)} className="btn-danger">
+                        إيقاف
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-2 text-center text-xs text-slate-400">لا توجد لينكات بعد — أنشئ أول لينك مشاركة.</p>
+          )}
+        </div>
+      ) : null}
+
+      {/* Settlement card (collapsible) */}
       <div className="card card-pad">
-        <h2 className="mb-2 text-base font-black text-slate-900 dark:text-white">⚖️ كارت التسوية</h2>
+        <button
+          type="button"
+          onClick={() => setSettlementOpen((current) => !current)}
+          aria-expanded={settlementOpen}
+          className="flex w-full items-center justify-between gap-2 text-right"
+        >
+          <span className="text-base font-black text-slate-900 dark:text-white">⚖️ كارت التسوية</span>
+          <span className="flex items-center gap-2">
+            <span className="max-w-[60%] truncate text-xs font-bold text-slate-500 dark:text-slate-400">{dueText}</span>
+            <span className={`transition-transform ${settlementOpen ? 'rotate-180' : ''}`}>▾</span>
+          </span>
+        </button>
+        {settlementOpen ? (
+        <>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           <SettlementRow label="تكلفة شراء البضاعة" value={settlement.buyCost} />
           <SettlementRow label="المصاريف" value={settlement.expenses} />
@@ -263,6 +354,8 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
             ✅ تسجيل التسوية وإغلاق الشراكة
           </button>
         )}
+        </>
+        ) : null}
       </div>
 
       {/* Supplier card */}

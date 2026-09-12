@@ -60,7 +60,7 @@ export function AiAssistant({ snapshot }: AiAssistantProps): ReactNode {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="المساعد الذكي"
-        className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-700 text-2xl text-white shadow-xl transition-transform hover:scale-105"
+        className="fixed bottom-24 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-700 text-2xl text-white shadow-xl transition-transform hover:scale-105 md:bottom-6"
       >
         {open ? '✕' : '🤖'}
       </button>
