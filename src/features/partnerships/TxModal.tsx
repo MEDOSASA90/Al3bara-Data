@@ -94,8 +94,9 @@ export function TxModal(props: TxModalProps): ReactNode {
           <label className="mb-1.5 block text-xs font-bold text-slate-500 dark:text-slate-400">نوع الحركة</label>
           <select value={kind} onChange={(e) => setKind(e.target.value as PartnershipTxKind)} className="input">
             <option value="expense">{KIND_LABELS.expense}</option>
-            <option value="sale">{KIND_LABELS.sale}</option>
-            <option value="refund">{KIND_LABELS.refund}</option>
+            {/* بيع/مرتجع للدفتر اتلغوا — المبيعات من قسم المباع. تظهر هنا فقط عند تعديل حركة قديمة. */}
+            {tx?.kind === 'sale' ? <option value="sale">{KIND_LABELS.sale}</option> : null}
+            {tx?.kind === 'refund' ? <option value="refund">{KIND_LABELS.refund}</option> : null}
             <option value="reimbursement">{KIND_LABELS.reimbursement}</option>
           </select>
         </div>

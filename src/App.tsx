@@ -771,14 +771,17 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       const editor = user.email ?? user.uid;
       const now = Timestamp.now();
       const existing = existingId ? (current.sales ?? []).find((sale) => sale.id === existingId) : undefined;
-      const lines = data.lines.map((line) => ({
-        name: line.name,
-        mode: line.mode,
-        quantity: line.quantity,
-        unit: line.unit,
-        unitPrice: line.unitPrice,
-        total: line.quantity * line.unitPrice,
-      }));
+      const lines = data.lines.map((line) => {
+        // Never send `undefined` to Firestore — it rejects the whole write.
+        const base = {
+          name: line.name,
+          mode: line.mode,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          total: line.quantity * line.unitPrice,
+        };
+        return line.unit === undefined ? base : { ...base, unit: line.unit };
+      });
       const totalAmount = lines.reduce((sum, line) => sum + line.total, 0);
       // Auto-collect payments on create only (edits preserve existing payments).
       let payments: SalePayment[] = existing?.payments ?? [];
