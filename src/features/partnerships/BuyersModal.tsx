@@ -14,6 +14,8 @@ export interface NewBuyerFormData {
 interface BuyersModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Render inline in the page instead of a popup. */
+  inline?: boolean;
   buyers: PartnershipBuyer[];
   sales: PartnershipSale[];
   parties: PartyRef[];
@@ -22,7 +24,7 @@ interface BuyersModalProps {
 }
 
 export function BuyersModal(props: BuyersModalProps): ReactNode {
-  const { isOpen, onClose, buyers, sales, parties, onAddBuyer, onTopUp } = props;
+  const { isOpen, onClose, inline, buyers, sales, parties, onAddBuyer, onTopUp } = props;
   const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -60,8 +62,8 @@ export function BuyersModal(props: BuyersModalProps): ReactNode {
     setError('');
   }
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="🧑‍🤝‍🧑 المشتريين">
+  const body = (
+    <>
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{rows.length} مشتري</span>
@@ -127,6 +129,19 @@ export function BuyersModal(props: BuyersModalProps): ReactNode {
           onTopUp={onTopUp}
         />
       ) : null}
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="card card-pad">
+        <h2 className="mb-3 text-base font-black text-slate-900 dark:text-white">🧑‍🤝‍🧑 المشتريين</h2>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="🧑‍🤝‍🧑 المشتريين">
+      {body}
     </Modal>
   );
 }

@@ -39,6 +39,8 @@ export interface SalePaymentFormData {
 interface SalesModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Render inline in the page instead of a popup. */
+  inline?: boolean;
   sales: PartnershipSale[];
   parties: PartyRef[];
   buyers: PartnershipBuyer[];
@@ -66,7 +68,7 @@ function rowTotal(row: SaleLineFormRow): number {
 }
 
 export function SalesModal(props: SalesModalProps): ReactNode {
-  const { isOpen, onClose, sales, parties, buyers, onSaveSale, onDeleteSale, onSavePayment, onDeletePayment, onOpenBuyerProfile } = props;
+  const { isOpen, onClose, inline, sales, parties, buyers, onSaveSale, onDeleteSale, onSavePayment, onDeletePayment, onOpenBuyerProfile } = props;
 
   const sortedSales = useMemo(() => {
     const list = [...(sales ?? [])];
@@ -250,8 +252,8 @@ export function SalesModal(props: SalesModalProps): ReactNode {
     setPaySaleId(null);
   }
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="🛒 المباع (مبيعات الشراكة)">
+  const body = (
+    <>
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -528,6 +530,19 @@ export function SalesModal(props: SalesModalProps): ReactNode {
           <p className="py-4 text-center text-xs font-medium text-slate-400">لا مبيعات بعد — سجّل أول بيعة.</p>
         )}
       </div>
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="card card-pad">
+        <h2 className="mb-3 text-base font-black text-slate-900 dark:text-white">🛒 المباع</h2>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="🛒 المباع (مبيعات الشراكة)">
+      {body}
     </Modal>
   );
 }

@@ -9,6 +9,8 @@ import type { SupplierPaymentFormData } from './PartnershipDetails';
 interface SupplierModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Render inline in the page instead of a popup. */
+  inline?: boolean;
   partnership: Partnership;
   parties: PartyRef[];
   onSaveSupplierPayment: (data: SupplierPaymentFormData, existingId: string | null) => void;
@@ -22,7 +24,7 @@ function partyDisplayName(parties: PartyRef[], id: Payer): string {
 }
 
 export function SupplierModal(props: SupplierModalProps): ReactNode {
-  const { isOpen, onClose, partnership: p, parties, onSaveSupplierPayment, onDeleteSupplierPayment, onSaveSupplierName } = props;
+  const { isOpen, onClose, inline, partnership: p, parties, onSaveSupplierPayment, onDeleteSupplierPayment, onSaveSupplierName } = props;
 
   const [supplierName, setSupplierName] = useState(p.supplierName ?? '');
   const [payAmount, setPayAmount] = useState<number | ''>('');
@@ -91,8 +93,8 @@ export function SupplierModal(props: SupplierModalProps): ReactNode {
     resetPayForm();
   }
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="🏭 المورّد">
+  const body = (
+    <>
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[180px] flex-1">
@@ -220,6 +222,19 @@ export function SupplierModal(props: SupplierModalProps): ReactNode {
           ) : null}
         </form>
       </div>
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="card card-pad">
+        <h2 className="mb-3 text-base font-black text-slate-900 dark:text-white">🏭 المورّد</h2>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="🏭 المورّد">
+      {body}
     </Modal>
   );
 }

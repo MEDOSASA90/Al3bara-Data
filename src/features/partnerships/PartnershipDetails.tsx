@@ -86,10 +86,12 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   const [settlementOpen, setSettlementOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [ledgerOpen, setLedgerOpen] = useState(false);
-  const [supplierOpen, setSupplierOpen] = useState(false);
-  const [salesOpen, setSalesOpen] = useState(false);
-  const [buyersOpen, setBuyersOpen] = useState(false);
+  type DetailsSection = 'items' | 'ledger' | 'supplier' | 'sales' | 'buyers';
+  const [openSection, setOpenSection] = useState<DetailsSection | null>('items');
+
+  function toggleSection(section: DetailsSection): void {
+    setOpenSection((current) => (current === section ? null : section));
+  }
 
   function shareUrl(token: string): string {
     return `${window.location.origin}${window.location.pathname}#/share/${token}`;
@@ -292,27 +294,57 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         ) : null}
       </div>
 
-      {/* Section shortcuts: ledger / supplier / sales / buyers open as popups */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <button type="button" onClick={() => setLedgerOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+      {/* Section shortcuts: expand inline in the same page */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <button
+          type="button"
+          onClick={() => toggleSection('items')}
+          aria-expanded={openSection === 'items'}
+          className={`card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop ${openSection === 'items' ? 'ring-2 ring-brand-500' : ''}`}
+        >
+          <span className="text-sm font-black text-slate-900 dark:text-white">📦 البضاعة المشتراة</span>
+          <span className="chip-brand">{(p.items ?? []).length} صنف</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleSection('ledger')}
+          aria-expanded={openSection === 'ledger'}
+          className={`card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop ${openSection === 'ledger' ? 'ring-2 ring-brand-500' : ''}`}
+        >
           <span className="text-sm font-black text-slate-900 dark:text-white">📒 الدفتر</span>
           <span className="chip-brand">{(p.txs ?? []).length} حركة</span>
         </button>
-        <button type="button" onClick={() => setSupplierOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+        <button
+          type="button"
+          onClick={() => toggleSection('supplier')}
+          aria-expanded={openSection === 'supplier'}
+          className={`card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop ${openSection === 'supplier' ? 'ring-2 ring-brand-500' : ''}`}
+        >
           <span className="text-sm font-black text-slate-900 dark:text-white">🏭 المورّد{p.supplierName ? ` • ${p.supplierName}` : ''}</span>
           <span className="chip-brand">{(p.supplierPayments ?? []).length} دفعة</span>
         </button>
-        <button type="button" onClick={() => setSalesOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+        <button
+          type="button"
+          onClick={() => toggleSection('sales')}
+          aria-expanded={openSection === 'sales'}
+          className={`card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop ${openSection === 'sales' ? 'ring-2 ring-brand-500' : ''}`}
+        >
           <span className="text-sm font-black text-slate-900 dark:text-white">🛒 المباع</span>
           <span className="chip-brand">{(p.sales ?? []).length} بيعة • متبقي <span className="font-mono" dir="ltr">{formatCurrency(salesAgg.remaining)}</span></span>
         </button>
-        <button type="button" onClick={() => setBuyersOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+        <button
+          type="button"
+          onClick={() => toggleSection('buyers')}
+          aria-expanded={openSection === 'buyers'}
+          className={`card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop ${openSection === 'buyers' ? 'ring-2 ring-brand-500' : ''}`}
+        >
           <span className="text-sm font-black text-slate-900 dark:text-white">🧑‍🤝‍🧑 المشتريين</span>
           <span className="chip-brand">{(p.buyers ?? []).length} مشتري</span>
         </button>
       </div>
 
       {/* Items table */}
+      {openSection === 'items' ? (
       <div className="card card-pad">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-black text-slate-900 dark:text-white">📦 البضاعة المشتركة</h2>
@@ -375,27 +407,36 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
           <p className="py-4 text-center text-xs font-medium text-slate-400">لا أصناف بعد — أضف البضاعة المشتركة.</p>
         )}
       </div>
+      ) : null}
 
+      {openSection === 'ledger' ? (
       <LedgerModal
-        isOpen={ledgerOpen}
-        onClose={() => setLedgerOpen(false)}
+        inline
+        isOpen
+        onClose={() => setOpenSection(null)}
         txs={p.txs ?? []}
         parties={parties}
         onSaveTx={onSaveTx}
         onDeleteTx={onDeleteTx}
       />
+      ) : null}
+      {openSection === 'supplier' ? (
       <SupplierModal
-        isOpen={supplierOpen}
-        onClose={() => setSupplierOpen(false)}
+        inline
+        isOpen
+        onClose={() => setOpenSection(null)}
         partnership={p}
         parties={parties}
         onSaveSupplierPayment={onSaveSupplierPayment}
         onDeleteSupplierPayment={onDeleteSupplierPayment}
         onSaveSupplierName={onSaveSupplierName}
       />
+      ) : null}
+      {openSection === 'sales' ? (
       <SalesModal
-        isOpen={salesOpen}
-        onClose={() => setSalesOpen(false)}
+        inline
+        isOpen
+        onClose={() => setOpenSection(null)}
         sales={p.sales ?? []}
         parties={parties}
         buyers={p.buyers ?? []}
@@ -405,15 +446,19 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         onDeletePayment={onDeleteSalePayment}
         onOpenBuyerProfile={onOpenBuyerProfile}
       />
+      ) : null}
+      {openSection === 'buyers' ? (
       <BuyersModal
-        isOpen={buyersOpen}
-        onClose={() => setBuyersOpen(false)}
+        inline
+        isOpen
+        onClose={() => setOpenSection(null)}
         buyers={p.buyers ?? []}
         sales={p.sales ?? []}
         parties={parties}
         onAddBuyer={onAddBuyer}
         onTopUp={onTopUpBuyer}
       />
+      ) : null}
 
       <ItemModal
         isOpen={itemModal.open}

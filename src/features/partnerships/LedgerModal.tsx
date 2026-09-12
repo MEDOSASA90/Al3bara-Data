@@ -7,6 +7,8 @@ import { TxModal, type PartnershipTxFormData } from './TxModal';
 interface LedgerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Render inline in the page instead of a popup. */
+  inline?: boolean;
   txs: PartnershipTx[];
   parties: PartyRef[];
   onSaveTx: (data: PartnershipTxFormData, existingId: string | null) => void;
@@ -26,7 +28,7 @@ function partyDisplayName(parties: PartyRef[], id: Payer): string {
 }
 
 export function LedgerModal(props: LedgerModalProps): ReactNode {
-  const { isOpen, onClose, txs, parties, onSaveTx, onDeleteTx } = props;
+  const { isOpen, onClose, inline, txs, parties, onSaveTx, onDeleteTx } = props;
   const [txModal, setTxModal] = useState<{ open: boolean; txId: string | null }>({ open: false, txId: null });
   const [reimbAmount, setReimbAmount] = useState<number | ''>('');
   const firstPartnerId = parties.find((party) => party.id !== 'me')?.id ?? 'me';
@@ -64,8 +66,8 @@ export function LedgerModal(props: LedgerModalProps): ReactNode {
     setReimbAmount('');
   }
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="📒 الدفتر (مصاريف / مبيعات / مرتجع / سداد)">
+  const body = (
+    <>
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -167,6 +169,19 @@ export function LedgerModal(props: LedgerModalProps): ReactNode {
           setTxModal({ open: false, txId: null });
         }}
       />
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="card card-pad">
+        <h2 className="mb-3 text-base font-black text-slate-900 dark:text-white">📒 الدفتر</h2>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="📒 الدفتر (مصاريف / مبيعات / مرتجع / سداد)">
+      {body}
     </Modal>
   );
 }
