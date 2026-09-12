@@ -35,6 +35,7 @@ import type {
   PredefinedItem,
   RejectedLot,
   ShareLink,
+  ShareScope,
   SupplierPayment,
   Transaction,
 } from '../domain/types';
@@ -605,21 +606,23 @@ export async function deletePartnership(partnershipId: string): Promise<void> {
 /* ---------- partner share links (public read-only) ---------- */
 
 export function toShareLink(token: string, data: DocumentData): ShareLink {
+  const scope = data['scope'];
   return {
     token,
     partnershipId: typeof data['partnershipId'] === 'string' ? (data['partnershipId'] as string) : '',
+    scope: scope === 'buyer' || scope === 'supplier' ? scope : 'full',
+    buyerId: typeof data['buyerId'] === 'string' ? (data['buyerId'] as string) : undefined,
     createdAt: data['createdAt'] as ShareLink['createdAt'],
     revoked: data['revoked'] === true,
   };
 }
 
-/** Creates a public share token for a partnership. Returns the token. */
-export async function createShareLink(partnershipId: string): Promise<string> {
+/** Creates a public share token. Returns the token. */
+export async function createShareLink(partnershipId: string, scope: ShareScope = 'full', buyerId?: string): Promise<string> {
   const token = crypto.randomUUID();
-  await setDoc(doc(db, COLLECTIONS.shareLinks, token), {
-    partnershipId,
-    createdAt: Timestamp.now(),
-  });
+  const payload: Record<string, unknown> = { partnershipId, scope, createdAt: Timestamp.now() };
+  if (buyerId) payload['buyerId'] = buyerId;
+  await setDoc(doc(db, COLLECTIONS.shareLinks, token), payload);
   return token;
 }
 

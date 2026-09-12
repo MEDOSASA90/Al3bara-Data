@@ -43,6 +43,8 @@ interface PartnershipDetailsProps {
   onTopUpBuyer: (buyerId: string, data: BuyerTopUpFormData) => void;
   shareLinks: ShareLink[];
   onCreateShareLink: () => void;
+  onCreateBuyerLink: (buyerId: string) => void;
+  onCreateSupplierLink: () => void;
   onRevokeShareLink: (token: string) => void;
 }
 
@@ -82,6 +84,8 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
     onTopUpBuyer,
     shareLinks,
     onCreateShareLink,
+    onCreateBuyerLink,
+    onCreateSupplierLink,
     onRevokeShareLink,
   } = props;
 
@@ -188,10 +192,36 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         <div className="card card-pad">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-black text-slate-900 dark:text-white">🔗 لينكات المشاركة (اطلاع فقط)</h2>
-            <button type="button" onClick={onCreateShareLink} className="btn-primary">
-              + لينك جديد
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={onCreateShareLink} className="btn-primary">
+                + لينك شامل
+              </button>
+              <button type="button" onClick={onCreateSupplierLink} className="btn-ghost">
+                🏭 لينك المورّد
+              </button>
+            </div>
           </div>
+          {(p.buyers ?? []).length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
+              <label className="text-[11px] font-bold text-slate-500">لينك مشتري:</label>
+              <select
+                id="buyer-link-select"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value !== '') {
+                    onCreateBuyerLink(e.target.value);
+                    e.target.value = '';
+                  }
+                }}
+                className="input min-w-[160px] flex-1"
+              >
+                <option value="">اختار المشتري...</option>
+                {(p.buyers ?? []).map((buyer) => (
+                  <option key={buyer.id} value={buyer.id}>{buyer.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             الشريك يفتح اللينك بدون حساب ويشوف البضاعة والمصاريف والتكاليف كاملة — بدون أي تعديل.
           </p>
@@ -199,6 +229,14 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
             <div className="space-y-2">
               {shareLinks.map((link) => (
                 <div key={link.token} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 p-2.5 text-xs dark:border-slate-700">
+                  <span className="chip-brand">
+                    {link.scope === 'buyer' ? '🧾 مشتري' : link.scope === 'supplier' ? '🏭 مورّد' : '📦 شامل'}
+                  </span>
+                  {link.scope === 'buyer' && link.buyerId ? (
+                    <span className="font-bold text-slate-600 dark:text-slate-300">
+                      {(p.buyers ?? []).find((b) => b.id === link.buyerId)?.name ?? ''}
+                    </span>
+                  ) : null}
                   <span className="font-mono" dir="ltr">{shareUrl(link.token).slice(-12)}…</span>
                   {link.revoked === true ? (
                     <span className="chip">⛔ موقوف</span>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Partnership } from '../../domain/types';
+import type { Partnership, ShareLink } from '../../domain/types';
 import {
   itemBuyCost,
   itemQuantity,
@@ -12,6 +12,7 @@ import { getPartnershipDoc, getShareLink } from '../../data/repositories';
 import { partnershipHtml } from '../../components/print/reports';
 import { printHtmlDocument } from '../../utils/print';
 import { BrandMark } from '../../components/ui/BrandLogo';
+import { BuyerShareView, SupplierShareView } from './ShareScopes';
 
 interface ShareViewProps {
   token: string;
@@ -20,7 +21,7 @@ interface ShareViewProps {
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; partnership: Partnership };
+  | { status: 'ready'; partnership: Partnership; link: ShareLink };
 
 const KIND_LABELS: Record<string, string> = {
   expense: '💸 مصروف',
@@ -46,7 +47,7 @@ export function ShareView({ token }: ShareViewProps): ReactNode {
           if (!cancelled) setState({ status: 'error', message: 'تعذر العثور على بيانات الشراكة.' });
           return;
         }
-        if (!cancelled) setState({ status: 'ready', partnership });
+        if (!cancelled) setState({ status: 'ready', partnership, link });
       } catch {
         if (!cancelled) setState({ status: 'error', message: 'تعذر تحميل البيانات. تحقق من الإنترنت وحاول مجدداً.' });
       }
@@ -77,6 +78,12 @@ export function ShareView({ token }: ShareViewProps): ReactNode {
   }
 
   const p = state.partnership;
+  if (state.link.scope === 'buyer') {
+    return <BuyerShareView partnership={p} buyerId={state.link.buyerId} />;
+  }
+  if (state.link.scope === 'supplier') {
+    return <SupplierShareView partnership={p} />;
+  }
   const partyIds = ['me', ...p.partners.map((partner) => partner.id)];
   const partyName = (id: string): string =>
     id === 'me' ? 'وليد' : (p.partners.find((partner) => partner.id === id)?.name ?? 'طرف');

@@ -572,7 +572,17 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
 
   const handleCreateShareLink = useCallback(async (): Promise<void> => {
     if (!openPartnershipId) return;
-    await createShareLink(openPartnershipId);
+    await createShareLink(openPartnershipId, 'full');
+  }, [openPartnershipId]);
+
+  const handleCreateBuyerLink = useCallback(async (buyerId: string): Promise<void> => {
+    if (!openPartnershipId) return;
+    await createShareLink(openPartnershipId, 'buyer', buyerId);
+  }, [openPartnershipId]);
+
+  const handleCreateSupplierLink = useCallback(async (): Promise<void> => {
+    if (!openPartnershipId) return;
+    await createShareLink(openPartnershipId, 'supplier');
   }, [openPartnershipId]);
 
   const handleRevokeShareLink = useCallback(async (token: string): Promise<void> => {
@@ -1244,6 +1254,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
                 onTopUpBuyer={(buyerId, data) => void handleTopUpBuyer(open.id, buyerId, data)}
                 shareLinks={shareLinks}
                 onCreateShareLink={() => void handleCreateShareLink()}
+                onCreateBuyerLink={(buyerId) => void handleCreateBuyerLink(buyerId)}
+                onCreateSupplierLink={() => void handleCreateSupplierLink()}
                 onRevokeShareLink={(token) => void handleRevokeShareLink(token)}
               />
               {buyerProfile !== null ? (

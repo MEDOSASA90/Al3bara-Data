@@ -302,9 +302,13 @@ export interface PartnershipSale extends Audit {
 export const ME_PARTY_ID = 'me';
 
 /** Public read-only share link for a partnership (viewed without login). */
+export type ShareScope = 'full' | 'buyer' | 'supplier';
 export interface ShareLink {
   token: string;
   partnershipId: string;
+  /** full = everything; buyer = one buyer's own account; supplier = goods + payments only. */
+  scope: ShareScope;
+  buyerId?: string;
   createdAt: Timestamp;
   revoked?: boolean;
 }
