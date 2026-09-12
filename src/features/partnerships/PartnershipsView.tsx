@@ -42,7 +42,7 @@ export function PartnershipsView(props: PartnershipsViewProps): ReactNode {
       .reduce(
         (sum, p) =>
           sum +
-          (partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, ['me', ...p.partners.map((partner) => partner.id)], p.supplierPayments ?? []).dues['me'] ?? 0),
+          (partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, ['me', ...p.partners.map((partner) => partner.id)], p.supplierPayments ?? [], p.sales ?? [], p.buyers ?? []).dues['me'] ?? 0),
         0,
       );
     return { active, settled, dueToMe };
@@ -136,7 +136,7 @@ export function PartnershipsView(props: PartnershipsViewProps): ReactNode {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {filtered.map((p) => {
             const partyIds = ['me', ...p.partners.map((partner) => partner.id)];
-            const s = partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partyIds, p.supplierPayments ?? []);
+            const s = partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partyIds, p.supplierPayments ?? [], p.sales ?? [], p.buyers ?? []);
             const myDue = s.dues['me'] ?? 0;
             const myShare = p.shares['me'] ?? 0;
             return (

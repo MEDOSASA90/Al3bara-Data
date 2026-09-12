@@ -1027,7 +1027,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       const current = partnerships.find((x) => x.id === partnershipId);
       if (!current || current.status !== 'active') return;
       const partnerIds = ['me', ...current.partners.map((partner) => partner.id)];
-      const settlement = partnershipSettlement(current.items ?? [], current.txs ?? [], current.shares, partnerIds, current.supplierPayments ?? []);
+      const settlement = partnershipSettlement(current.items ?? [], current.txs ?? [], current.shares, partnerIds, current.supplierPayments ?? [], current.sales ?? [], current.buyers ?? []);
       // Hub settlement through me: every other party settles directly with me.
       const settleTxs: PartnershipTx[] = [];
       let index = 0;

@@ -119,8 +119,8 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   const partnerIds = useMemo(() => parties.map((party) => party.id), [parties]);
 
   const settlement = useMemo(
-    () => partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partnerIds, p.supplierPayments ?? []),
-    [p.items, p.txs, p.shares, partnerIds, p.supplierPayments],
+    () => partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partnerIds, p.supplierPayments ?? [], p.sales ?? [], p.buyers ?? []),
+    [p.items, p.txs, p.shares, partnerIds, p.supplierPayments, p.sales, p.buyers],
   );
 
   const salesAgg = useMemo(() => salesTotals(p.sales ?? []), [p.sales]);
@@ -155,6 +155,11 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         <button type="button" onClick={onPrint} className="btn-ghost">
           🖨️ كشف حساب
         </button>
+        {p.status === 'active' && Math.abs(myDue) >= 0.01 && (
+          <button type="button" onClick={onSettle} className="btn-primary">
+            ✅ تسجيل التسوية وإغلاق الشراكة
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShareOpen((current) => !current)}
@@ -283,11 +288,6 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         >
           {dueText}
         </div>
-        {p.status === 'active' && Math.abs(myDue) >= 0.01 && (
-          <button type="button" onClick={onSettle} className="btn-primary mt-3 w-full">
-            ✅ تسجيل التسوية وإغلاق الشراكة
-          </button>
-        )}
         </>
         ) : null}
       </div>

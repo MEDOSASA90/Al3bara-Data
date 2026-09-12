@@ -575,7 +575,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
     return ta - tb;
   });
   const partyIds = ['me', ...partnership.partners.map((partner) => partner.id)];
-  const s = partnershipSettlement(items, partnership.txs ?? [], partnership.shares, partyIds, partnership.supplierPayments ?? []);
+  const s = partnershipSettlement(items, partnership.txs ?? [], partnership.shares, partyIds, partnership.supplierPayments ?? [], partnership.sales ?? [], partnership.buyers ?? []);
   const partyName = (id: string): string =>
     id === 'me' ? 'وليد' : (partnership.partners.find((partner) => partner.id === id)?.name ?? 'طرف');
   const myDue = s.dues['me'] ?? 0;

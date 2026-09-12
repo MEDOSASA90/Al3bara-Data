@@ -80,7 +80,7 @@ export function ShareView({ token }: ShareViewProps): ReactNode {
   const partyIds = ['me', ...p.partners.map((partner) => partner.id)];
   const partyName = (id: string): string =>
     id === 'me' ? 'وليد' : (p.partners.find((partner) => partner.id === id)?.name ?? 'طرف');
-  const settlement = partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partyIds);
+  const settlement = partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partyIds, p.supplierPayments ?? [], p.sales ?? [], p.buyers ?? []);
   const buyCostTotal = (p.items ?? []).reduce((sum, item) => sum + itemBuyCost(item), 0);
   const supplierPaid = supplierTotals(p.supplierPayments ?? []).paid;
   const supplierDue = supplierBalance(buyCostTotal, supplierPaid);

@@ -291,7 +291,8 @@ function defaultReimburseTo(from: string, partyIds: string[]): string {
 /**
  * Pure partnership settlement (no commission — commission syncs separately to advance accounts).
  * - buyCost: sum of item costs (deliveries sum when present, else legacy buyCost).
- * - expenses/sales: from ledger txs by kind; refunds reduce sales.
+ * - expenses/sales: ledger txs by kind (refunds reduce sales) PLUS المباع
+ *   sales records (full revenue) and buyer top-ups (cash collected by receiver).
  * - supplier payments: full/partial payments to the supplier, counted in contributed by payer.
  * - NOTE: legacy item.paidBy is stored but NOT counted in contributed (avoids double count
  *   with the synthesized supplier payments).
@@ -308,9 +309,13 @@ export function partnershipSettlement(
   shares: SharesInput,
   partnerIds: string[] = [],
   supplierPayments: SupplierPayment[] = [],
+  salesRecords: PartnershipSale[] = [],
+  buyers: PartnershipBuyer[] = [],
 ): PartnershipSettlement {
   const safeItems = items ?? [];
   const safeTxs = txs ?? [];
+  const safeSales = salesRecords ?? [];
+  const safeBuyers = buyers ?? [];
   const safeSupplierPayments = supplierPayments ?? [];
 
   const firstPartnerId =
@@ -400,7 +405,28 @@ export function partnershipSettlement(
     }
   }
 
-  const sales = grossSales - refunds;
+  for (const buyer of safeBuyers) {
+    for (const top of buyer.topUps ?? []) {
+      // Buyer top-up = cash received now (collected by receiver); later balance
+      // deductions against sales are NOT new collections (already counted here).
+      const id = resolve(typeof top.by === 'string' && top.by !== '' ? top.by : 'me');
+      collected[id] = (collected[id] ?? 0) + (top.amount || 0);
+    }
+  }
+
+  // New المباع sales records: revenue counts in full; cash payments collected
+  // by their receiver; balance-source payments already counted via top-ups.
+  let recordSalesTotal = 0;
+  for (const sale of safeSales) {
+    recordSalesTotal += sale.totalAmount || 0;
+    for (const pay of sale.payments ?? []) {
+      if (pay.source === 'balance') continue;
+      const id = resolve(typeof pay.by === 'string' && pay.by !== '' ? pay.by : 'me');
+      collected[id] = (collected[id] ?? 0) + (pay.amount || 0);
+    }
+  }
+
+  const sales = grossSales - refunds + recordSalesTotal;
   const supplierPaid = supplierTotals(safeSupplierPayments).paid;
   const supBalance = supplierBalance(buyCost, supplierPaid);
   const profit = sales - buyCost - expenses;
