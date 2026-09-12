@@ -27,6 +27,7 @@ import type {
   Partner,
   Partnership,
   PartnershipItem,
+  PartnershipSale,
   PartnershipTx,
   PredefinedBuyer,
   PredefinedItem,
@@ -62,6 +63,10 @@ function asPartnershipTxList(value: unknown): PartnershipTx[] {
 
 function asSupplierPaymentList(value: unknown): SupplierPayment[] {
   return Array.isArray(value) ? (value as SupplierPayment[]) : [];
+}
+
+function asPartnershipSaleList(value: unknown): PartnershipSale[] {
+  return Array.isArray(value) ? (value as PartnershipSale[]) : [];
 }
 
 function asPartnerList(value: unknown): Partner[] {
@@ -155,6 +160,20 @@ function normalizeSupplierPayments(value: unknown, firstPartnerId: string): Supp
   });
 }
 
+function normalizePartnershipSales(value: unknown, firstPartnerId: string): PartnershipSale[] {
+  return asPartnershipSaleList(value).map((sale) => {
+    const payments = Array.isArray(sale.payments) ? sale.payments : [];
+    return {
+      ...sale,
+      lines: Array.isArray(sale.lines) ? [...sale.lines] : [],
+      payments: payments.map((pay) => ({
+        ...pay,
+        by: resolvePartyId(pay.by, firstPartnerId),
+      })),
+    };
+  });
+}
+
 export function toPartnership(id: string, data: DocumentData): Partnership {
   const legacyName = typeof data['partnerName'] === 'string' ? (data['partnerName'] as string) : '';
   const legacyPhone = typeof data['partnerPhone'] === 'string' ? (data['partnerPhone'] as string) : '';
@@ -214,6 +233,7 @@ export function toPartnership(id: string, data: DocumentData): Partnership {
     items,
     txs: normalizePartnershipTxs(data['txs'], firstId),
     supplierPayments: [...storedPayments, ...legacyPayments],
+    sales: normalizePartnershipSales(data['sales'], firstId),
   };
   if (typeof data['supplierName'] === 'string' && (data['supplierName'] as string).trim() !== '') {
     partnership.supplierName = (data['supplierName'] as string).trim();
@@ -520,6 +540,13 @@ export async function setPartnershipSupplierPayments(
   supplierPayments: SupplierPayment[],
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTIONS.partnerships, partnershipId), { supplierPayments });
+}
+
+export async function setPartnershipSales(
+  partnershipId: string,
+  sales: PartnershipSale[],
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTIONS.partnerships, partnershipId), { sales });
 }
 
 export async function settlePartnership(

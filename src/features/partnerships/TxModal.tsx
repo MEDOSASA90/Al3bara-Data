@@ -123,7 +123,7 @@ export function TxModal(props: TxModalProps): ReactNode {
               <label className="mb-1.5 block text-xs font-bold text-slate-500 dark:text-slate-400">من (الدافع)</label>
               <select value={paidBy} onChange={(e) => setPaidBy(e.target.value as Payer)} className="input">
                 {parties.map((party) => (
-                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 أنا' : `🤝 ${party.name}`}</option>
+                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 وليد' : `🤝 ${party.name}`}</option>
                 ))}
               </select>
             </div>
@@ -131,7 +131,7 @@ export function TxModal(props: TxModalProps): ReactNode {
               <label className="mb-1.5 block text-xs font-bold text-slate-500 dark:text-slate-400">إلى (المستلم)</label>
               <select value={reimburseTo} onChange={(e) => setReimburseTo(e.target.value as Payer)} className="input">
                 {parties.filter((party) => party.id !== paidBy).map((party) => (
-                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 أنا' : `🤝 ${party.name}`}</option>
+                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 وليد' : `🤝 ${party.name}`}</option>
                 ))}
               </select>
             </div>
@@ -150,7 +150,7 @@ export function TxModal(props: TxModalProps): ReactNode {
                     onClick={() => setPaidBy(party.id)}
                     className={paidBy === party.id ? 'btn-primary' : 'btn-ghost'}
                   >
-                    {party.id === 'me' ? '🙋 أنا' : `🤝 ${party.name}`}
+                    {party.id === 'me' ? '🙋 وليد' : `🤝 ${party.name}`}
                   </button>
                 ))}
               </div>
@@ -159,7 +159,7 @@ export function TxModal(props: TxModalProps): ReactNode {
               <label className="mb-1.5 block text-xs font-bold text-slate-500 dark:text-slate-400">من سلّم المبلغ؟ (للتوضيح فقط)</label>
               <select value={deliveredBy} onChange={(e) => setDeliveredBy(e.target.value as Payer)} className="input">
                 {parties.map((party) => (
-                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 أنا' : `🤝 ${party.name}`}</option>
+                  <option key={party.id} value={party.id}>{party.id === 'me' ? '🙋 وليد' : `🤝 ${party.name}`}</option>
                 ))}
               </select>
             </div>

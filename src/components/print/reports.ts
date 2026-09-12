@@ -577,7 +577,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
   const partyIds = ['me', ...partnership.partners.map((partner) => partner.id)];
   const s = partnershipSettlement(items, partnership.txs ?? [], partnership.shares, partyIds, partnership.supplierPayments ?? []);
   const partyName = (id: string): string =>
-    id === 'me' ? 'أنا' : (partnership.partners.find((partner) => partner.id === id)?.name ?? 'طرف');
+    id === 'me' ? 'وليد' : (partnership.partners.find((partner) => partner.id === id)?.name ?? 'طرف');
   const myDue = s.dues['me'] ?? 0;
   const dueLines = partyIds
     .map((id) => {
@@ -591,7 +591,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
       ? 'الحساب متعادل — لا مستحقات'
       : myDue > 0
         ? `الشركاء مدينون لي بمبلغ ${formatCurrency(myDue)}`
-        : `أنا مدين للشركاء بمبلغ ${formatCurrency(Math.abs(myDue))}`;
+        : `وليد مدين للشركاء بمبلغ ${formatCurrency(Math.abs(myDue))}`;
 
   const kindLabel = (kind: string): string =>
     kind === 'expense' ? 'مصروف' : kind === 'sale' ? 'بيع' : kind === 'refund' ? 'مرتجع' : 'سداد';
@@ -649,6 +649,34 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
     )
     .join('');
 
+  const sales = [...(partnership.sales ?? [])].sort((a, b) => {
+    const ta = a.date && typeof a.date.toMillis === 'function' ? a.date.toMillis() : 0;
+    const tb = b.date && typeof b.date.toMillis === 'function' ? b.date.toMillis() : 0;
+    return ta - tb;
+  });
+  const salesBought = sales.reduce((s, sale) => s + (sale.totalAmount || 0), 0);
+  const salesPaid = sales.reduce((s, sale) => s + (sale.payments ?? []).reduce((acc, pay) => acc + (pay.amount || 0), 0), 0);
+  const salesRows = sales
+    .map((sale) => {
+      const paid = (sale.payments ?? []).reduce((acc, pay) => acc + (pay.amount || 0), 0);
+      const remaining = (sale.totalAmount || 0) - paid;
+      const status = remaining <= 0.009 ? 'خالص' : paid > 0.009 ? 'جزئي' : sale.isAdvance === true ? 'عربون' : 'آجل';
+      const lines = (sale.lines ?? [])
+        .map((line) => `<div class="text-[11px] text-slate-500">• ${line.name} • <span dir="ltr">${line.quantity ?? 0}${line.unit ? ` ${line.unit}` : ''} × ${formatCurrency(line.unitPrice ?? 0)}</span> = <span dir="ltr" class="font-bold">${formatCurrency(line.total ?? 0)}</span></div>`)
+        .join('');
+      const payments = (sale.payments ?? [])
+        .map((pay) => `<div class="text-[11px] text-slate-500">💵 <span dir="ltr" class="font-bold">${formatCurrency(pay.amount)}</span> • ${formatDate(pay.date)}${pay.notes ? ` • ${pay.notes}` : ''}</div>`)
+        .join('');
+      return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+<td class="p-4 text-slate-600 whitespace-nowrap">${formatDate(sale.date)}</td>
+<td class="p-4 text-slate-800 font-bold">${sale.buyerName}${sale.isAdvance === true ? ' (عربون)' : ''}<div class="mt-1 space-y-0.5">${lines}</div>${sale.notes ? `<div class="text-xs text-slate-500 mt-1">${sale.notes}</div>` : ''}</td>
+<td class="p-4 text-slate-600 text-sm font-bold">${status}<div class="mt-1 space-y-0.5">${payments}</div></td>
+<td class="p-4 font-black font-mono" dir="ltr">${formatCurrency(sale.totalAmount)}</td>
+<td class="p-4 font-bold font-mono text-emerald-700" dir="ltr">${formatCurrency(paid)}</td>
+<td class="p-4 font-bold font-mono text-amber-700" dir="ltr">${formatCurrency(remaining)}</td></tr>`;
+    })
+    .join('');
+
   const body = `<div class="bg-white font-sans min-h-screen" dir="rtl" style="max-width: 210mm; margin: 0 auto; padding: 40px;">
 ${header('كشف حساب شراكة', exportDate)}
 <section class="mb-8 bg-gradient-to-br from-slate-50 to-white p-8 rounded-2xl border border-slate-100 shadow-sm">
@@ -700,6 +728,23 @@ ${partnership.partners.map((partner) => `<div class="bg-white/10 rounded-lg p-3"
 <th class="p-3 text-xs font-bold uppercase">البيان</th>
 <th class="p-3 text-xs font-bold uppercase">المبلغ</th></tr></thead>
 <tbody>${supplierPayRows || '<tr><td class="p-4 text-center text-slate-400" colspan="4">لا مدفوعات للمورد</td></tr>'}</tbody></table></div></section>
+<section class="mb-8"><div class="flex items-center gap-2 mb-4">
+<div class="w-1 h-6 bg-emerald-600 rounded-full"></div>
+<h3 class="text-lg font-bold text-slate-800">المباع (مبيعات الشراكة)</h3></div>
+<div class="grid grid-cols-3 gap-3 mb-4 text-center text-sm">
+<div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><div class="text-slate-500 mb-1">إجمالي المبيع</div><div class="font-black" dir="ltr">${formatCurrency(salesBought)}</div></div>
+<div class="bg-emerald-50 rounded-lg p-3 border border-emerald-100"><div class="text-emerald-600 mb-1">المحصّل</div><div class="font-black" dir="ltr">${formatCurrency(salesPaid)}</div></div>
+<div class="bg-amber-50 rounded-lg p-3 border border-amber-100"><div class="text-amber-600 mb-1">المتبقي</div><div class="font-black" dir="ltr">${formatCurrency(salesBought - salesPaid)}</div></div>
+</div>
+<div class="border border-slate-200 rounded-xl overflow-hidden"><table class="w-full text-right">
+<thead><tr class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+<th class="p-3 text-xs font-bold uppercase">التاريخ</th>
+<th class="p-3 text-xs font-bold uppercase">المشتري والأصناف</th>
+<th class="p-3 text-xs font-bold uppercase">الحالة والتحصيل</th>
+<th class="p-3 text-xs font-bold uppercase">الإجمالي</th>
+<th class="p-3 text-xs font-bold uppercase">المحصّل</th>
+<th class="p-3 text-xs font-bold uppercase">المتبقي</th></tr></thead>
+<tbody>${salesRows || '<tr><td class="p-4 text-center text-slate-400" colspan="6">لا مبيعات</td></tr>'}</tbody></table></div></section>
 <section class="mb-8"><div class="flex items-center gap-2 mb-4">
 <div class="w-1 h-6 bg-purple-600 rounded-full"></div>
 <h3 class="text-lg font-bold text-slate-800">دفتر الحركات</h3></div>

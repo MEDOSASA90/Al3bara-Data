@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { Payer, Partnership, PartyRef, ShareLink } from '../../domain/types';
-import { itemBuyCost, itemQuantity, partnershipSettlement, supplierBalance, supplierTotals } from '../../domain/finance';
-import { formatCurrency, formatDate, todayDateInput } from '../../utils/format';
+import { itemBuyCost, itemQuantity, partnershipSettlement, salesTotals } from '../../domain/finance';
+import { formatCurrency } from '../../utils/format';
 import { ItemModal, type PartnershipItemFormData } from './ItemModal';
-import { TxModal, type PartnershipTxFormData } from './TxModal';
+import type { PartnershipTxFormData } from './TxModal';
+import { LedgerModal } from './LedgerModal';
+import { SupplierModal } from './SupplierModal';
+import { SalesModal, type PartnershipSaleFormData, type SalePaymentFormData } from './SalesModal';
 
 export interface SupplierPaymentFormData {
   amount: number;
@@ -27,21 +30,14 @@ interface PartnershipDetailsProps {
   onSaveSupplierPayment: (data: SupplierPaymentFormData, existingId: string | null) => void;
   onDeleteSupplierPayment: (paymentId: string) => void;
   onSaveSupplierName: (name: string) => void;
+  onSaveSale: (data: PartnershipSaleFormData, existingId: string | null) => void;
+  onDeleteSale: (saleId: string) => void;
+  onSaveSalePayment: (saleId: string, data: SalePaymentFormData, existingId: string | null) => void;
+  onDeleteSalePayment: (saleId: string, paymentId: string) => void;
+  onOpenBuyerProfile: (buyerName: string) => void;
   shareLinks: ShareLink[];
   onCreateShareLink: () => void;
   onRevokeShareLink: (token: string) => void;
-}
-
-const KIND_LABELS: Record<string, string> = {
-  expense: '💸 مصروف',
-  sale: '💰 بيع',
-  reimbursement: '🔄 سداد',
-  refund: '↩️ مرتجع',
-};
-
-function partyDisplayName(parties: PartyRef[], id: Payer): string {
-  if (id === 'me') return '🙋 أنا';
-  return parties.find((party) => party.id === id)?.name ?? 'طرف';
 }
 
 function SettlementRow(props: { label: string; value: number; strong?: boolean }): ReactNode {
@@ -71,6 +67,11 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
     onSaveSupplierPayment,
     onDeleteSupplierPayment,
     onSaveSupplierName,
+    onSaveSale,
+    onDeleteSale,
+    onSaveSalePayment,
+    onDeleteSalePayment,
+    onOpenBuyerProfile,
     shareLinks,
     onCreateShareLink,
     onRevokeShareLink,
@@ -79,6 +80,9 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   const [settlementOpen, setSettlementOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [salesOpen, setSalesOpen] = useState(false);
 
   function shareUrl(token: string): string {
     return `${window.location.origin}${window.location.pathname}#/share/${token}`;
@@ -101,45 +105,20 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   }
 
   const [itemModal, setItemModal] = useState<{ open: boolean; itemId: string | null }>({ open: false, itemId: null });
-  const [txModal, setTxModal] = useState<{ open: boolean; txId: string | null }>({ open: false, txId: null });
-  const [reimbAmount, setReimbAmount] = useState<number | ''>('');
   const parties: PartyRef[] = useMemo(
-    () => [{ id: 'me', name: 'أنا' }, ...p.partners.map((partner) => ({ id: partner.id, name: partner.name }))],
+    () => [{ id: 'me', name: 'وليد' }, ...p.partners.map((partner) => ({ id: partner.id, name: partner.name }))],
     [p.partners],
   );
   const partnerIds = useMemo(() => parties.map((party) => party.id), [parties]);
-  const firstPartnerId = p.partners[0]?.id ?? 'me';
-
-  const [reimbFrom, setReimbFrom] = useState<Payer>(firstPartnerId);
-  const [reimbTo, setReimbTo] = useState<Payer>('me');
 
   const settlement = useMemo(
     () => partnershipSettlement(p.items ?? [], p.txs ?? [], p.shares, partnerIds, p.supplierPayments ?? []),
     [p.items, p.txs, p.shares, partnerIds, p.supplierPayments],
   );
 
-  const sortedTxs = useMemo(() => {
-    const list = [...(p.txs ?? [])];
-    list.sort((a, b) => {
-      const ta = typeof a.date?.toMillis === 'function' ? a.date.toMillis() : 0;
-      const tb = typeof b.date?.toMillis === 'function' ? b.date.toMillis() : 0;
-      return tb - ta;
-    });
-    return list;
-  }, [p.txs]);
-
-  const sortedSupplierPayments = useMemo(() => {
-    const list = [...(p.supplierPayments ?? [])];
-    list.sort((a, b) => {
-      const ta = typeof a.date?.toMillis === 'function' ? a.date.toMillis() : 0;
-      const tb = typeof b.date?.toMillis === 'function' ? b.date.toMillis() : 0;
-      return tb - ta;
-    });
-    return list;
-  }, [p.supplierPayments]);
+  const salesAgg = useMemo(() => salesTotals(p.sales ?? []), [p.sales]);
 
   const editingItem = itemModal.itemId ? (p.items ?? []).find((i) => i.id === itemModal.itemId) ?? null : null;
-  const editingTx = txModal.txId ? (p.txs ?? []).find((t) => t.id === txModal.txId) ?? null : null;
 
   const myDue = settlement.dues['me'] ?? 0;
   const myShare = p.shares['me'] ?? 0;
@@ -149,58 +128,6 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
       : myDue > 0
         ? `💰 الشركاء مدينون لك بمبلغ ${formatCurrency(myDue)}`
         : `💸 أنت مدين للشركاء بمبلغ ${formatCurrency(Math.abs(myDue))}`;
-
-  // Supplier card state
-  const [supplierName, setSupplierName] = useState(p.supplierName ?? '');
-  const [payAmount, setPayAmount] = useState<number | ''>('');
-  const [payPaidBy, setPayPaidBy] = useState<Payer>('me');
-  const [payDeliveredBy, setPayDeliveredBy] = useState<Payer>('me');
-  const [payDate, setPayDate] = useState(todayDateInput());
-  const [payNotes, setPayNotes] = useState('');
-
-  useEffect(() => {
-    setSupplierName(p.supplierName ?? '');
-  }, [p.supplierName]);
-
-  const supplierCost = useMemo(() => (p.items ?? []).reduce((sum, item) => sum + itemBuyCost(item), 0), [p.items]);
-  const supplierPaid = useMemo(() => supplierTotals(p.supplierPayments ?? []).paid, [p.supplierPayments]);
-  const supplierRemaining = supplierBalance(supplierCost, supplierPaid);
-
-  function handleQuickReimburse(event: React.FormEvent): void {
-    event.preventDefault();
-    if (reimbAmount === '' || Number(reimbAmount) <= 0) return;
-    if (reimbFrom === reimbTo) return;
-    onSaveTx(
-      {
-        kind: 'reimbursement',
-        amount: Number(reimbAmount),
-        paidBy: reimbFrom,
-        deliveredBy: reimbFrom,
-        reimburseTo: reimbTo,
-        notes: 'سداد بين الشركاء',
-        dateInput: new Date().toISOString().slice(0, 10),
-      },
-      null,
-    );
-    setReimbAmount('');
-  }
-
-  function handleAddSupplierPayment(event: React.FormEvent): void {
-    event.preventDefault();
-    if (payAmount === '' || Number(payAmount) <= 0) return;
-    if (payDate.trim() === '') return;
-    const data: SupplierPaymentFormData = {
-      amount: Number(payAmount),
-      paidBy: payPaidBy,
-      dateInput: payDate,
-      notes: payNotes.trim(),
-    };
-    if (payDeliveredBy !== payPaidBy) data.deliveredBy = payDeliveredBy;
-    onSaveSupplierPayment(data, null);
-    setPayAmount('');
-    setPayNotes('');
-    setPayDate(todayDateInput());
-  }
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
@@ -317,7 +244,7 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
               value={settlement.contributed[partner.id] ?? 0}
             />
           ))}
-          <SettlementRow label="ما حصّلته أنا" value={settlement.collectedMe} />
+          <SettlementRow label="ما حصّله وليد" value={settlement.collectedMe} />
           {p.partners.map((partner) => (
             <SettlementRow
               key={`r-${partner.id}`}
@@ -358,119 +285,20 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         ) : null}
       </div>
 
-      {/* Supplier card */}
-      <div className="card card-pad">
-        <h2 className="mb-3 text-base font-black text-slate-900 dark:text-white">🏭 المورد</h2>
-        <div className="mb-3 flex flex-wrap items-end gap-2">
-          <div className="min-w-[180px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">اسم المورد</label>
-            <input
-              value={supplierName}
-              onChange={(e) => setSupplierName(e.target.value)}
-              placeholder="اسم المورد"
-              className="input"
-            />
-          </div>
-          <button type="button" onClick={() => onSaveSupplierName(supplierName.trim())} className="btn-ghost">
-            💾 حفظ الاسم
-          </button>
-        </div>
-        <div className="mb-4 grid grid-cols-3 gap-2 text-center text-xs font-bold">
-          <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
-            <div className="mb-1 text-slate-500">إجمالي التكلفة</div>
-            <div className="font-mono text-sm text-slate-800 dark:text-slate-100" dir="ltr">{formatCurrency(supplierCost)}</div>
-          </div>
-          <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950">
-            <div className="mb-1 text-emerald-600">المدفوع</div>
-            <div className="font-mono text-sm text-emerald-700 dark:text-emerald-300" dir="ltr">{formatCurrency(supplierPaid)}</div>
-          </div>
-          <div className="rounded-xl bg-amber-50 p-3 dark:bg-amber-950">
-            <div className="mb-1 text-amber-600">المتبقي</div>
-            <div className="font-mono text-sm text-amber-700 dark:text-amber-300" dir="ltr">{formatCurrency(supplierRemaining)}</div>
-          </div>
-        </div>
-
-        {sortedSupplierPayments.length > 0 ? (
-          <div className="mb-4 space-y-2">
-            {sortedSupplierPayments.map((pay) => {
-              const isLegacy = pay.id.startsWith('legacy-');
-              return (
-                <div
-                  key={pay.id}
-                  className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-slate-200/70 p-3 dark:border-slate-700"
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-base font-black text-slate-900 dark:text-white" dir="ltr">
-                        {formatCurrency(pay.amount)}
-                      </span>
-                      <span className="chip-brand">{partyDisplayName(parties, pay.paidBy)}</span>
-                      {pay.deliveredBy ? (
-                        <span className="text-[11px] font-bold text-slate-500">سلّمها {partyDisplayName(parties, pay.deliveredBy)}</span>
-                      ) : null}
-                      {isLegacy && <span className="chip">تحويل تلقائي</span>}
-                    </div>
-                    <p className="mt-1 text-[11px] font-semibold text-slate-400">{formatDate(pay.date)}</p>
-                    {pay.notes !== '' && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">بيان: {pay.notes}</p>}
-                  </div>
-                  {!isLegacy && (
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSupplierPayment(pay.id)}
-                      className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
-                    >
-                      حذف
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="mb-4 py-2 text-center text-xs font-medium text-slate-400">لا مدفوعات للمورد بعد.</p>
-        )}
-
-        <form onSubmit={handleAddSupplierPayment} className="flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
-          <div className="min-w-[100px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">المبلغ</label>
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={payAmount}
-              onChange={(e) => setPayAmount(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="0"
-              className="input"
-            />
-          </div>
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">من دفع؟</label>
-            <select value={payPaidBy} onChange={(e) => setPayPaidBy(e.target.value as Payer)} className="input">
-              {parties.map((party) => (
-                <option key={party.id} value={party.id}>{partyDisplayName(parties, party.id)}</option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">من سلّم؟</label>
-            <select value={payDeliveredBy} onChange={(e) => setPayDeliveredBy(e.target.value as Payer)} className="input">
-              {parties.map((party) => (
-                <option key={party.id} value={party.id}>{partyDisplayName(parties, party.id)}</option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">التاريخ</label>
-            <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="input" />
-          </div>
-          <div className="min-w-[140px] flex-[2]">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">بيان</label>
-            <input value={payNotes} onChange={(e) => setPayNotes(e.target.value)} placeholder="اختياري" className="input" />
-          </div>
-          <button type="submit" className="btn-primary">
-            + دفعة للمورد
-          </button>
-        </form>
+      {/* Section shortcuts: ledger / supplier / sales open as popups */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <button type="button" onClick={() => setLedgerOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+          <span className="text-sm font-black text-slate-900 dark:text-white">📒 الدفتر</span>
+          <span className="chip-brand">{(p.txs ?? []).length} حركة</span>
+        </button>
+        <button type="button" onClick={() => setSupplierOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+          <span className="text-sm font-black text-slate-900 dark:text-white">🏭 المورّد{p.supplierName ? ` • ${p.supplierName}` : ''}</span>
+          <span className="chip-brand">{(p.supplierPayments ?? []).length} دفعة</span>
+        </button>
+        <button type="button" onClick={() => setSalesOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+          <span className="text-sm font-black text-slate-900 dark:text-white">🛒 المباع</span>
+          <span className="chip-brand">{(p.sales ?? []).length} بيعة • متبقي <span className="font-mono" dir="ltr">{formatCurrency(salesAgg.remaining)}</span></span>
+        </button>
       </div>
 
       {/* Items table */}
@@ -537,96 +365,34 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         )}
       </div>
 
-      {/* Ledger */}
-      <div className="card card-pad">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-black text-slate-900 dark:text-white">📒 الدفتر (مصاريف / مبيعات / مرتجع / سداد)</h2>
-          <button type="button" onClick={() => setTxModal({ open: true, txId: null })} className="btn-primary">
-            + حركة
-          </button>
-        </div>
-
-        <form onSubmit={handleQuickReimburse} className="mb-4 flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">سداد سريع من</label>
-            <select value={reimbFrom} onChange={(e) => setReimbFrom(e.target.value as Payer)} className="input">
-              {parties.map((party) => (
-                <option key={party.id} value={party.id}>{partyDisplayName(parties, party.id)}</option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">إلى</label>
-            <select value={reimbTo} onChange={(e) => setReimbTo(e.target.value as Payer)} className="input">
-              {parties.filter((party) => party.id !== reimbFrom).map((party) => (
-                <option key={party.id} value={party.id}>{partyDisplayName(parties, party.id)}</option>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-[120px] flex-1">
-            <label className="mb-1 block text-[11px] font-bold text-slate-500">المبلغ</label>
-            <input
-              type="number"
-              min={0}
-              step="any"
-              value={reimbAmount}
-              onChange={(e) => setReimbAmount(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="0"
-              className="input"
-            />
-          </div>
-          <button type="submit" className="btn-ghost">
-            🔄 تسجيل السداد
-          </button>
-        </form>
-
-        {sortedTxs.length > 0 ? (
-          <div className="space-y-2">
-            {sortedTxs.map((tx) => (
-              <div
-                key={tx.id}
-                className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-slate-200/70 p-3 dark:border-slate-700"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-base font-black text-slate-900 dark:text-white" dir="ltr">
-                      {formatCurrency(tx.amount)}
-                    </span>
-                    <span className="chip-brand">{KIND_LABELS[tx.kind] ?? tx.kind}</span>
-                    <span className="chip">{partyDisplayName(parties, tx.paidBy)}</span>
-                    {tx.deliveredBy ? (
-                      <span className="text-[11px] font-bold text-slate-500">سلّمها {partyDisplayName(parties, tx.deliveredBy)}</span>
-                    ) : null}
-                    {tx.kind === 'reimbursement' && tx.reimburseTo ? (
-                      <span className="text-[11px] font-bold text-slate-500">→ {partyDisplayName(parties, tx.reimburseTo)}</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-[11px] font-semibold text-slate-400">{formatDate(tx.date)}</p>
-                  {tx.notes !== '' && <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">بيان: {tx.notes}</p>}
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setTxModal({ open: true, txId: tx.id })}
-                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300"
-                  >
-                    تعديل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteTx(tx.id)}
-                    className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
-                  >
-                    حذف
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-4 text-center text-xs font-medium text-slate-400">لا حركات في الدفتر بعد.</p>
-        )}
-      </div>
+      <LedgerModal
+        isOpen={ledgerOpen}
+        onClose={() => setLedgerOpen(false)}
+        txs={p.txs ?? []}
+        parties={parties}
+        onSaveTx={onSaveTx}
+        onDeleteTx={onDeleteTx}
+      />
+      <SupplierModal
+        isOpen={supplierOpen}
+        onClose={() => setSupplierOpen(false)}
+        partnership={p}
+        parties={parties}
+        onSaveSupplierPayment={onSaveSupplierPayment}
+        onDeleteSupplierPayment={onDeleteSupplierPayment}
+        onSaveSupplierName={onSaveSupplierName}
+      />
+      <SalesModal
+        isOpen={salesOpen}
+        onClose={() => setSalesOpen(false)}
+        sales={p.sales ?? []}
+        parties={parties}
+        onSaveSale={onSaveSale}
+        onDeleteSale={onDeleteSale}
+        onSavePayment={onSaveSalePayment}
+        onDeletePayment={onDeleteSalePayment}
+        onOpenBuyerProfile={onOpenBuyerProfile}
+      />
 
       <ItemModal
         isOpen={itemModal.open}
@@ -635,16 +401,6 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         onSave={(data) => {
           onSaveItem(data, itemModal.itemId);
           setItemModal({ open: false, itemId: null });
-        }}
-      />
-      <TxModal
-        isOpen={txModal.open}
-        tx={editingTx}
-        parties={parties}
-        onClose={() => setTxModal({ open: false, txId: null })}
-        onSave={(data) => {
-          onSaveTx(data, txModal.txId);
-          setTxModal({ open: false, txId: null });
         }}
       />
     </div>

@@ -141,8 +141,16 @@ export type PartnershipStatus = 'active' | 'settled';
 /** How a shared-goods item is priced: lump-sum lot or weight × unit price. */
 export type PricingMode = 'lot' | 'weight';
 
+/** Audit trail: who created / last edited a record (email of the editor). */
+export interface Audit {
+  createdBy?: string;
+  createdAt?: Timestamp;
+  updatedBy?: string;
+  updatedAt?: Timestamp;
+}
+
 /** One arrival of a shared-goods item: qty at that day's price. */
-export interface Delivery {
+export interface Delivery extends Audit {
   id: string;
   date: Timestamp;
   quantity: number;
@@ -151,7 +159,7 @@ export interface Delivery {
 }
 
 /** A payment made to the supplier for a partnership (full or partial). */
-export interface SupplierPayment {
+export interface SupplierPayment extends Audit {
   id: string;
   amount: number;
   /** Source of the money (settlement counts on this). */
@@ -163,7 +171,7 @@ export interface SupplierPayment {
   supplierName?: string;
 }
 
-export interface PartnershipItem {
+export interface PartnershipItem extends Audit {
   id: string;
   name: string;
   mode: PricingMode;
@@ -178,7 +186,7 @@ export interface PartnershipItem {
 
 export type PartnershipTxKind = 'expense' | 'sale' | 'reimbursement' | 'refund';
 
-export interface PartnershipTx {
+export interface PartnershipTx extends Audit {
   id: string;
   kind: PartnershipTxKind;
   amount: number;
@@ -217,6 +225,42 @@ export interface Partnership {
   supplierName?: string;
   /** Payments made to the supplier (full or partial). */
   supplierPayments: SupplierPayment[];
+  /** Credit sales to buyers (المباع): buyer owes totalAmount minus payments. */
+  sales: PartnershipSale[];
+}
+
+/** One sold line inside a partnership sale. */
+export interface SaleLine {
+  name: string;
+  quantity: number;
+  unit?: string;
+  unitPrice: number;
+  total: number;
+}
+
+/** A collection received against a partnership sale. */
+export interface SalePayment extends Audit {
+  id: string;
+  amount: number;
+  date: Timestamp;
+  by: Payer;
+  notes: string;
+}
+
+/** A credit sale to a buyer inside a partnership. */
+export interface PartnershipSale extends Audit {
+  id: string;
+  buyerName: string;
+  lines: SaleLine[];
+  totalAmount: number;
+  date: Timestamp;
+  isAdvance?: boolean;
+  payments: SalePayment[];
+  notes?: string;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedBy?: string;
+  updatedAt?: Timestamp;
 }
 
 /** Reserved party id for the app user. */
@@ -237,16 +281,16 @@ export interface PartyRef {
 
 /** All parties incl 'me' first, then every partner. */
 export function partnershipParties(partnership: Pick<Partnership, 'partners'>): PartyRef[] {
-  const list: PartyRef[] = [{ id: ME_PARTY_ID, name: 'أنا' }];
+  const list: PartyRef[] = [{ id: ME_PARTY_ID, name: 'وليد' }];
   for (const partner of partnership.partners ?? []) {
     list.push({ id: partner.id, name: partner.name });
   }
   return list;
 }
 
-/** Display name of a party id ('me' → أنا, unknown → the raw id). */
+/** Display name of a party id ('me' → وليد, unknown → the raw id). */
 export function partyNameOf(partnership: Pick<Partnership, 'partners'>, partyId: string): string {
-  if (partyId === ME_PARTY_ID) return 'أنا';
+  if (partyId === ME_PARTY_ID) return 'وليد';
   const found = (partnership.partners ?? []).find((partner) => partner.id === partyId);
   if (found) return found.name;
   if (partyId === 'partner') {

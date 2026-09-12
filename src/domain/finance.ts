@@ -3,7 +3,7 @@ import {
   COMMISSION_RATE,
   PAYMENT_DEADLINE_DAYS,
 } from './constants';
-import type { Client, Delivery, Entity, FinancialSummary, Lot, PartnershipItem, PartnershipTx, SupplierPayment, Transaction } from './types';
+import type { Client, Delivery, Entity, FinancialSummary, Lot, PartnershipItem, PartnershipSale, PartnershipTx, SupplierPayment, Transaction } from './types';
 
 /** Form numeric field: a real number or an empty (cleared) input. */
 export type NumericInput = number | '';
@@ -480,4 +480,45 @@ export function groupTransactionsByDay(transactions: Transaction[]): DayGroup[] 
     }
   }
   return [...map.values()].sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+/* ---------- partnership sales (المباع) ---------- */
+
+export type SaleStatus = 'paid' | 'partial' | 'advance' | 'unpaid';
+
+/** Total collected against a sale. */
+export function salePaid(sale: Pick<PartnershipSale, 'payments'>): number {
+  return (sale.payments ?? []).reduce((sum, pay) => sum + (pay.amount || 0), 0);
+}
+
+/** Remaining balance on a sale: total minus collected. */
+export function saleRemaining(sale: Pick<PartnershipSale, 'payments' | 'totalAmount'>): number {
+  return (sale.totalAmount || 0) - salePaid(sale);
+}
+
+/** Sale status: paid / partial / advance (unpaid + isAdvance) / unpaid. */
+export function saleStatus(sale: Pick<PartnershipSale, 'payments' | 'totalAmount' | 'isAdvance'>): SaleStatus {
+  const remaining = saleRemaining(sale);
+  if (remaining <= 0.009) return 'paid';
+  const paid = salePaid(sale);
+  if (paid > 0.009) return 'partial';
+  return sale.isAdvance === true ? 'advance' : 'unpaid';
+}
+
+export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
+  paid: '✅ خالص',
+  partial: '🟡 جزئي',
+  advance: '📝 عربون',
+  unpaid: '🔴 آجل',
+};
+
+/** Aggregate bought/paid/remaining across a list of sales. */
+export function salesTotals(sales: PartnershipSale[]): { bought: number; paid: number; remaining: number } {
+  let bought = 0;
+  let paid = 0;
+  for (const sale of sales ?? []) {
+    bought += sale.totalAmount || 0;
+    paid += salePaid(sale);
+  }
+  return { bought, paid, remaining: bought - paid };
 }

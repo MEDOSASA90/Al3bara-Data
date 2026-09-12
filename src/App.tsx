@@ -35,6 +35,7 @@ import {
   setClientTransactions,
   setEntityLots,
   setPartnershipItems,
+  setPartnershipSales,
   setPartnershipSupplierPayments,
   setPartnershipTxs,
   settlePartnership,
@@ -58,8 +59,10 @@ import type {
   Lot,
   Partnership,
   PartnershipItem,
+  PartnershipSale,
   PartnershipTx,
   RejectedLot,
+  SalePayment,
   SessionUser,
   ShareLink,
   SupplierPayment,
@@ -90,6 +93,8 @@ import { ShareView } from './features/partnerships/ShareView';
 import { PartnershipModal, type PartnershipFormData } from './features/partnerships/PartnershipModal';
 import type { PartnershipItemFormData } from './features/partnerships/ItemModal';
 import type { PartnershipTxFormData } from './features/partnerships/TxModal';
+import type { PartnershipSaleFormData, SalePaymentFormData } from './features/partnerships/SalesModal';
+import { BuyerProfileModal, type BuyerSaleRef } from './features/partnerships/BuyerProfileModal';
 import { ClientModal } from './features/clients/ClientModal';
 import { TransactionModal, type TransactionFormData } from './features/clients/TransactionModal';
 import { PaymentModal, type PaymentFormData } from './features/clients/PaymentModal';
@@ -614,6 +619,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     async (partnershipId: string, data: PartnershipItemFormData, existingId: string | null): Promise<void> => {
       const current = partnerships.find((x) => x.id === partnershipId);
       if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
       const deliveries: Delivery[] = data.deliveries.map((d) => ({
         id: uniqueId('del'),
         date: timestampFromDateInput(d.dateInput),
@@ -621,11 +628,16 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         unitPrice: d.unitPrice,
         total: d.quantity * d.unitPrice,
       }));
+      const existing = existingId ? current.items.find((item) => item.id === existingId) : undefined;
       const base: PartnershipItem = {
         id: existingId ?? uniqueId('pitem'),
         name: data.name,
         mode: data.mode,
         deliveries,
+        createdBy: existing?.createdBy ?? editor,
+        createdAt: existing?.createdAt ?? now,
+        updatedBy: editor,
+        updatedAt: now,
       };
       if (data.notes !== '') base.notes = data.notes;
       const updated = existingId
@@ -634,7 +646,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       await setPartnershipItems(current.id, updated);
       await syncPartner({ ...current, items: updated });
     },
-    [partnerships, syncPartner],
+    [partnerships, syncPartner, user.email, user.uid],
   );
 
   const handleDeletePartnershipItem = useCallback(
@@ -652,6 +664,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     async (partnershipId: string, data: PartnershipTxFormData, existingId: string | null): Promise<void> => {
       const current = partnerships.find((x) => x.id === partnershipId);
       if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
+      const existing = existingId ? current.txs.find((tx) => tx.id === existingId) : undefined;
       const base: PartnershipTx = {
         id: existingId ?? uniqueId('ptx'),
         kind: data.kind,
@@ -659,6 +674,10 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         paidBy: data.paidBy,
         notes: data.notes,
         date: timestampFromDateInput(data.dateInput),
+        createdBy: existing?.createdBy ?? editor,
+        createdAt: existing?.createdAt ?? now,
+        updatedBy: editor,
+        updatedAt: now,
       };
       if (data.kind === 'reimbursement') base.reimburseTo = data.reimburseTo;
       else if (data.deliveredBy) base.deliveredBy = data.deliveredBy;
@@ -667,7 +686,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         : [...current.txs, base];
       await setPartnershipTxs(current.id, updated);
     },
-    [partnerships],
+    [partnerships, user.email, user.uid],
   );
 
   const handleDeletePartnershipTx = useCallback(
@@ -686,13 +705,20 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     async (partnershipId: string, data: SupplierPaymentFormData, existingId: string | null): Promise<void> => {
       const current = partnerships.find((x) => x.id === partnershipId);
       if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
       const stored = (current.supplierPayments ?? []).filter((pay) => !pay.id.startsWith('legacy-'));
+      const existing = existingId ? stored.find((pay) => pay.id === existingId) : undefined;
       const base: SupplierPayment = {
         id: existingId ?? uniqueId('spay'),
         amount: data.amount,
         paidBy: data.paidBy,
         date: timestampFromDateInput(data.dateInput),
         notes: data.notes,
+        createdBy: existing?.createdBy ?? editor,
+        createdAt: existing?.createdAt ?? now,
+        updatedBy: editor,
+        updatedAt: now,
       };
       if (data.deliveredBy) base.deliveredBy = data.deliveredBy;
       if (current.supplierName) base.supplierName = current.supplierName;
@@ -701,7 +727,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         : [...stored, base];
       await setPartnershipSupplierPayments(current.id, updated);
     },
-    [partnerships],
+    [partnerships, user.email, user.uid],
   );
 
   const handleDeleteSupplierPayment = useCallback(
@@ -730,6 +756,141 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     },
     [partnerships],
   );
+
+  /* ----- partnership sales (المباع) ----- */
+
+  const handleSavePartnershipSale = useCallback(
+    async (partnershipId: string, data: PartnershipSaleFormData, existingId: string | null): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
+      const existing = existingId ? (current.sales ?? []).find((sale) => sale.id === existingId) : undefined;
+      const lines = data.lines.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitPrice: line.unitPrice,
+        total: line.quantity * line.unitPrice,
+      }));
+      const base: PartnershipSale = {
+        id: existingId ?? uniqueId('psale'),
+        buyerName: data.buyerName,
+        lines,
+        totalAmount: lines.reduce((sum, line) => sum + line.total, 0),
+        date: timestampFromDateInput(data.dateInput),
+        payments: existing?.payments ?? [],
+        createdBy: existing?.createdBy ?? editor,
+        createdAt: existing?.createdAt ?? now,
+        updatedBy: editor,
+        updatedAt: now,
+      };
+      if (data.isAdvance) base.isAdvance = true;
+      if (data.notes !== '') base.notes = data.notes;
+      const updated = existingId
+        ? (current.sales ?? []).map((sale) => (sale.id === existingId ? base : sale))
+        : [...(current.sales ?? []), base];
+      await setPartnershipSales(current.id, updated);
+    },
+    [partnerships, user.email, user.uid],
+  );
+
+  const handleDeletePartnershipSale = useCallback(
+    async (partnershipId: string, saleId: string): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      await setPartnershipSales(
+        current.id,
+        (current.sales ?? []).filter((sale) => sale.id !== saleId),
+      );
+    },
+    [partnerships],
+  );
+
+  const handleSaveSalePayment = useCallback(
+    async (partnershipId: string, saleId: string, data: SalePaymentFormData, existingId: string | null): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
+      const updated = (current.sales ?? []).map((sale) => {
+        if (sale.id !== saleId) return sale;
+        const payments = sale.payments ?? [];
+        const existing = existingId ? payments.find((pay) => pay.id === existingId) : undefined;
+        const base: SalePayment = {
+          id: existingId ?? uniqueId('spaymt'),
+          amount: data.amount,
+          date: timestampFromDateInput(data.dateInput),
+          by: data.by,
+          notes: data.notes,
+          createdBy: existing?.createdBy ?? editor,
+          createdAt: existing?.createdAt ?? now,
+          updatedBy: editor,
+          updatedAt: now,
+        };
+        return {
+          ...sale,
+          payments: existingId ? payments.map((pay) => (pay.id === existingId ? base : pay)) : [...payments, base],
+          updatedBy: editor,
+          updatedAt: now,
+        };
+      });
+      await setPartnershipSales(current.id, updated);
+    },
+    [partnerships, user.email, user.uid],
+  );
+
+  const handleDeleteSalePayment = useCallback(
+    async (partnershipId: string, saleId: string, paymentId: string): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      const editor = user.email ?? user.uid;
+      const updated = (current.sales ?? []).map((sale) =>
+        sale.id === saleId
+          ? { ...sale, payments: (sale.payments ?? []).filter((pay) => pay.id !== paymentId), updatedBy: editor, updatedAt: Timestamp.now() }
+          : sale,
+      );
+      await setPartnershipSales(current.id, updated);
+    },
+    [partnerships, user.email, user.uid],
+  );
+
+  /* ----- buyer profile ----- */
+
+  const [buyerProfile, setBuyerProfile] = useState<string | null>(null);
+
+  function matchesBuyerName(clientName: string, buyerName: string): boolean {
+    const a = clientName.trim();
+    const b = buyerName.trim();
+    if (a === '' || b === '') return false;
+    return a === b || a.includes(b) || b.includes(a);
+  }
+
+  const buyerAllSales: BuyerSaleRef[] = useMemo(() => {
+    if (buyerProfile === null) return [];
+    const refs: BuyerSaleRef[] = [];
+    for (const partnership of partnerships) {
+      for (const sale of partnership.sales ?? []) {
+        if (sale.buyerName.trim() === buyerProfile.trim()) {
+          refs.push({ partnershipId: partnership.id, partnershipName: partnership.name, sale });
+        }
+      }
+    }
+    refs.sort((a, b) => {
+      const ta = typeof a.sale.date?.toMillis === 'function' ? a.sale.date.toMillis() : 0;
+      const tb = typeof b.sale.date?.toMillis === 'function' ? b.sale.date.toMillis() : 0;
+      return tb - ta;
+    });
+    return refs;
+  }, [buyerProfile, partnerships]);
+
+  const buyerPrivateMatches = useMemo(() => {
+    if (buyerProfile === null) return { advances: [], work: [] };
+    return {
+      advances: advanceClients.filter((c) => !c.isArchived && matchesBuyerName(c.name, buyerProfile)),
+      work: workClients.filter((c) => !c.isArchived && matchesBuyerName(c.name, buyerProfile)),
+    };
+  }, [buyerProfile, advanceClients, workClients]);
 
   const handleSettlePartnership = useCallback(
     async (partnershipId: string): Promise<void> => {
@@ -920,24 +1081,42 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         const open = openPartnershipId ? partnerships.find((x) => x.id === openPartnershipId) ?? null : null;
         if (open) {
           return (
-            <PartnershipDetails
-              partnership={open}
-              onBack={() => setOpenPartnershipId(null)}
-              onEditMeta={() => setPartnershipModal({ open: true, partnership: open })}
-              onDeletePartnership={() => setDeletePartnershipId(open.id)}
-              onPrint={() => void handlePrint(partnershipHtml(open, exportDate))}
-              onSaveItem={(data, existingId) => void handleSavePartnershipItem(open.id, data, existingId)}
-              onDeleteItem={(itemId) => void handleDeletePartnershipItem(open.id, itemId)}
-              onSaveTx={(data, existingId) => void handleSavePartnershipTx(open.id, data, existingId)}
-              onDeleteTx={(txId) => void handleDeletePartnershipTx(open.id, txId)}
-              onSettle={() => void handleSettlePartnership(open.id)}
-              onSaveSupplierPayment={(data, existingId) => void handleSaveSupplierPayment(open.id, data, existingId)}
-              onDeleteSupplierPayment={(paymentId) => void handleDeleteSupplierPayment(open.id, paymentId)}
-              onSaveSupplierName={(name) => void handleSaveSupplierName(open.id, name)}
-              shareLinks={shareLinks}
-              onCreateShareLink={() => void handleCreateShareLink()}
-              onRevokeShareLink={(token) => void handleRevokeShareLink(token)}
-            />
+            <>
+              <PartnershipDetails
+                partnership={open}
+                onBack={() => setOpenPartnershipId(null)}
+                onEditMeta={() => setPartnershipModal({ open: true, partnership: open })}
+                onDeletePartnership={() => setDeletePartnershipId(open.id)}
+                onPrint={() => void handlePrint(partnershipHtml(open, exportDate))}
+                onSaveItem={(data, existingId) => void handleSavePartnershipItem(open.id, data, existingId)}
+                onDeleteItem={(itemId) => void handleDeletePartnershipItem(open.id, itemId)}
+                onSaveTx={(data, existingId) => void handleSavePartnershipTx(open.id, data, existingId)}
+                onDeleteTx={(txId) => void handleDeletePartnershipTx(open.id, txId)}
+                onSettle={() => void handleSettlePartnership(open.id)}
+                onSaveSupplierPayment={(data, existingId) => void handleSaveSupplierPayment(open.id, data, existingId)}
+                onDeleteSupplierPayment={(paymentId) => void handleDeleteSupplierPayment(open.id, paymentId)}
+                onSaveSupplierName={(name) => void handleSaveSupplierName(open.id, name)}
+                onSaveSale={(data, existingId) => void handleSavePartnershipSale(open.id, data, existingId)}
+                onDeleteSale={(saleId) => void handleDeletePartnershipSale(open.id, saleId)}
+                onSaveSalePayment={(saleId, data, existingId) => void handleSaveSalePayment(open.id, saleId, data, existingId)}
+                onDeleteSalePayment={(saleId, paymentId) => void handleDeleteSalePayment(open.id, saleId, paymentId)}
+                onOpenBuyerProfile={(buyerName) => setBuyerProfile(buyerName)}
+                shareLinks={shareLinks}
+                onCreateShareLink={() => void handleCreateShareLink()}
+                onRevokeShareLink={(token) => void handleRevokeShareLink(token)}
+              />
+              {buyerProfile !== null ? (
+                <BuyerProfileModal
+                  isOpen
+                  onClose={() => setBuyerProfile(null)}
+                  buyerName={buyerProfile}
+                  currentPartnershipName={open.name}
+                  currentSales={(open.sales ?? []).filter((sale) => sale.buyerName.trim() === buyerProfile.trim())}
+                  allSales={buyerAllSales}
+                  privateMatches={buyerPrivateMatches}
+                />
+              ) : null}
+            </>
           );
         }
         return (
