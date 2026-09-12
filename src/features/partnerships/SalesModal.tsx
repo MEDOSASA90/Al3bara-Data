@@ -174,7 +174,7 @@ export function SalesModal(props: SalesModalProps): ReactNode {
         setFormError(`يرجى إدخال اسم الصنف رقم ${i + 1}.`);
         return;
       }
-      if (typeof r.quantity !== 'number' || r.quantity <= 0) {
+      if (r.mode !== 'lot' && (typeof r.quantity !== 'number' || r.quantity <= 0)) {
         setFormError(`يرجى إدخال كمية صحيحة للصنف رقم ${i + 1}.`);
         return;
       }
