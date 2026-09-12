@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Payer, PartnershipBuyer, PartnershipSale, PartyRef, SaleLine, SaleLineMode } from '../../domain/types';
-import { SALE_STATUS_LABELS, salePaid, saleRemaining, saleStatus } from '../../domain/finance';
+import { SALE_STATUS_LABELS, buyerBalance, salePaid, saleRemaining, saleStatus } from '../../domain/finance';
 import { dateInputFromTimestamp, formatCurrency, formatDate, todayDateInput } from '../../utils/format';
 import { Modal } from '../../components/ui/Modal';
+import { normalizeArabic } from '../../components/ui/SearchableDropdown';
 import { AuditBadge } from './AuditBadge';
 
 export interface SaleLineFormRow {
@@ -88,6 +89,15 @@ export function SalesModal(props: SalesModalProps): ReactNode {
   const [deductFromBalance, setDeductFromBalance] = useState(false);
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+  const [buyerSuggestOpen, setBuyerSuggestOpen] = useState(false);
+
+  /** Smart buyer suggestions: normalized match from first letter, with live balance. */
+  const buyerSuggestions = useMemo(() => {
+    const q = normalizeArabic(buyerName.trim());
+    const list = buyers ?? [];
+    const ranked = (q === '' ? list : list.filter((b) => normalizeArabic(b.name).includes(q))).slice(0, 8);
+    return ranked.map((b) => ({ id: b.id, name: b.name, balance: buyerBalance(b, sales ?? []) }));
+  }, [buyerName, buyers, sales]);
 
   // ---- payment form (per sale) ----
   const [paySaleId, setPaySaleId] = useState<string | null>(null);
@@ -254,9 +264,37 @@ export function SalesModal(props: SalesModalProps): ReactNode {
         {formOpen ? (
           <form onSubmit={handleSubmitSale} className="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
             <div className="grid grid-cols-2 gap-2">
-              <div>
+              <div className="relative">
                 <label className="mb-1 block text-[11px] font-bold text-slate-500">اسم المشتري <span className="text-rose-500">*</span></label>
-                <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="اسم المشتري" className="input" />
+                <input
+                  value={buyerName}
+                  onChange={(e) => { setBuyerName(e.target.value); setBuyerSuggestOpen(true); }}
+                  onFocus={() => setBuyerSuggestOpen(true)}
+                  onBlur={() => window.setTimeout(() => setBuyerSuggestOpen(false), 150)}
+                  placeholder="اكتب أول حرف للاقتراح من المسجلين"
+                  className="input"
+                  autoComplete="off"
+                />
+                {buyerSuggestOpen && buyerSuggestions.length > 0 ? (
+                  <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                    {buyerSuggestions.map((buyer) => (
+                      <button
+                        key={buyer.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setBuyerName(buyer.name); setBuyerSuggestOpen(false); }}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-right text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        <span className="font-bold text-slate-800 dark:text-slate-100">{buyer.name}</span>
+                        {buyer.balance !== null ? (
+                          <span className={`font-mono text-xs ${buyer.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`} dir="ltr">
+                            رصيد {buyer.balance.toFixed(2)}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-bold text-slate-500">التاريخ</label>
@@ -312,11 +350,7 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                <input type="checkbox" checked={isAdvance} onChange={(e) => setIsAdvance(e.target.checked)} className="h-4 w-4" />
-                📝 عربون (دفعة مقدمة)
-              </label>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <span className="text-sm font-black text-slate-800 dark:text-slate-100">
                 الإجمالي: <span className="font-mono" dir="ltr">{formTotal.toFixed(2)}</span>
               </span>
