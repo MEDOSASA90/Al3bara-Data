@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 import type { Client, Entity, Lot, Partnership, Transaction } from '../../domain/types';
-import { itemBuyCost, itemQuantity, partnershipSettlement, sortLotsByNumber, supplierBalance, supplierTotals } from '../../domain/finance';
+import { itemBuyCost, itemQuantity, partnershipSettlement, sortLotsByNumber, supplierBalance, supplierTotals, buyerBalance, buyerSales } from '../../domain/finance';
 import {
   formatCurrency,
   formatDate,
@@ -677,6 +677,27 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
     })
     .join('');
 
+  const buyersRows = (partnership.buyers ?? [])
+    .map((buyer) => {
+      const balance = buyerBalance(buyer, sales);
+      const count = buyerSales(buyer, sales).length;
+      return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
+<td class="p-4 text-slate-800 font-bold">${buyer.name}${buyer.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${buyer.phone}</div>` : ''}</td>
+<td class="p-4 font-black font-mono ${balance < 0 ? 'text-rose-700' : 'text-emerald-700'}" dir="ltr">${formatCurrency(balance)}</td>
+<td class="p-4 text-slate-600 font-mono" dir="ltr">${count}</td></tr>`;
+    })
+    .join('');
+
+  const buyersSection = `<section class="mb-8"><div class="flex items-center gap-2 mb-4">
+<div class="w-1 h-6 bg-cyan-600 rounded-full"></div>
+<h3 class="text-lg font-bold text-slate-800">المشتريين</h3></div>
+<div class="border border-slate-200 rounded-xl overflow-hidden"><table class="w-full text-right">
+<thead><tr class="bg-slate-100 text-slate-700 border-b-2 border-slate-300">
+<th class="p-3 text-xs font-bold uppercase">المشتري</th>
+<th class="p-3 text-xs font-bold uppercase">الرصيد</th>
+<th class="p-3 text-xs font-bold uppercase">عدد البيعات</th></tr></thead>
+<tbody>${buyersRows || '<tr><td class="p-4 text-center text-slate-400" colspan="3">لا مشتريين مسجلين</td></tr>'}</tbody></table></div></section>`;
+
   const body = `<div class="bg-white font-sans min-h-screen" dir="rtl" style="max-width: 210mm; margin: 0 auto; padding: 40px;">
 ${header('كشف حساب شراكة', exportDate)}
 <section class="mb-8 bg-gradient-to-br from-slate-50 to-white p-8 rounded-2xl border border-slate-100 shadow-sm">
@@ -745,6 +766,7 @@ ${partnership.partners.map((partner) => `<div class="bg-white/10 rounded-lg p-3"
 <th class="p-3 text-xs font-bold uppercase">المحصّل</th>
 <th class="p-3 text-xs font-bold uppercase">المتبقي</th></tr></thead>
 <tbody>${salesRows || '<tr><td class="p-4 text-center text-slate-400" colspan="6">لا مبيعات</td></tr>'}</tbody></table></div></section>
+${buyersSection}
 <section class="mb-8"><div class="flex items-center gap-2 mb-4">
 <div class="w-1 h-6 bg-purple-600 rounded-full"></div>
 <h3 class="text-lg font-bold text-slate-800">دفتر الحركات</h3></div>

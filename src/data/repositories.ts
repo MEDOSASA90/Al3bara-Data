@@ -19,6 +19,7 @@ import { db } from '../config/firebase';
 import { COLLECTIONS } from '../domain/constants';
 import type {
   ArchiveType,
+  BuyerTopUp,
   Client,
   ClientType,
   Delivery,
@@ -26,6 +27,7 @@ import type {
   Lot,
   Partner,
   Partnership,
+  PartnershipBuyer,
   PartnershipItem,
   PartnershipSale,
   PartnershipTx,
@@ -163,15 +165,43 @@ function normalizeSupplierPayments(value: unknown, firstPartnerId: string): Supp
 function normalizePartnershipSales(value: unknown, firstPartnerId: string): PartnershipSale[] {
   return asPartnershipSaleList(value).map((sale) => {
     const payments = Array.isArray(sale.payments) ? sale.payments : [];
-    return {
+    const lines = Array.isArray(sale.lines) ? sale.lines : [];
+    const next: PartnershipSale = {
       ...sale,
-      lines: Array.isArray(sale.lines) ? [...sale.lines] : [],
+      lines: lines.map((line) => ({
+        ...line,
+        mode: line.mode === 'lot' ? 'lot' : 'weight',
+      })),
       payments: payments.map((pay) => ({
         ...pay,
         by: resolvePartyId(pay.by, firstPartnerId),
+        source: pay.source === 'balance' ? 'balance' : 'cash',
       })),
     };
+    if (typeof sale.buyerId === 'string' && sale.buyerId !== '') next.buyerId = sale.buyerId;
+    return next;
   });
+}
+
+function asPartnershipBuyerList(value: unknown): PartnershipBuyer[] {
+  return Array.isArray(value) ? (value as PartnershipBuyer[]) : [];
+}
+
+function normalizePartnershipBuyers(value: unknown): PartnershipBuyer[] {
+  return asPartnershipBuyerList(value)
+    .filter((b) => b && typeof b === 'object' && typeof b.id === 'string' && typeof b.name === 'string')
+    .map((b) => {
+      const topUps = Array.isArray(b.topUps) ? (b.topUps as BuyerTopUp[]) : [];
+      const next: PartnershipBuyer = {
+        ...b,
+        topUps: topUps
+          .filter((t) => t && typeof t === 'object' && typeof t.id === 'string')
+          .map((t) => ({ ...t })),
+      };
+      if (typeof b.phone !== 'string' || b.phone === '') delete next.phone;
+      if (typeof b.notes !== 'string' || b.notes === '') delete next.notes;
+      return next;
+    });
 }
 
 export function toPartnership(id: string, data: DocumentData): Partnership {
@@ -234,6 +264,7 @@ export function toPartnership(id: string, data: DocumentData): Partnership {
     txs: normalizePartnershipTxs(data['txs'], firstId),
     supplierPayments: [...storedPayments, ...legacyPayments],
     sales: normalizePartnershipSales(data['sales'], firstId),
+    buyers: normalizePartnershipBuyers(data['buyers']),
   };
   if (typeof data['supplierName'] === 'string' && (data['supplierName'] as string).trim() !== '') {
     partnership.supplierName = (data['supplierName'] as string).trim();
@@ -547,6 +578,13 @@ export async function setPartnershipSales(
   sales: PartnershipSale[],
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTIONS.partnerships, partnershipId), { sales });
+}
+
+export async function setPartnershipBuyers(
+  partnershipId: string,
+  buyers: PartnershipBuyer[],
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTIONS.partnerships, partnershipId), { buyers });
 }
 
 export async function settlePartnership(

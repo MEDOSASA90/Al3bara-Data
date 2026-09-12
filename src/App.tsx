@@ -34,6 +34,7 @@ import {
   revokeShareLink,
   setClientTransactions,
   setEntityLots,
+  setPartnershipBuyers,
   setPartnershipItems,
   setPartnershipSales,
   setPartnershipSupplierPayments,
@@ -51,6 +52,7 @@ import {
 } from './data/repositories';
 import type {
   ArchiveType,
+  BuyerTopUp,
   Client,
   ClientType,
   Delivery,
@@ -58,6 +60,7 @@ import type {
   ImageRef,
   Lot,
   Partnership,
+  PartnershipBuyer,
   PartnershipItem,
   PartnershipSale,
   PartnershipTx,
@@ -69,7 +72,7 @@ import type {
   Transaction,
   ViewMode,
 } from './domain/types';
-import { activeLotsTotal, calcCommission, clientBalance, partnershipSettlement } from './domain/finance';
+import { activeLotsTotal, buyerBalance, calcCommission, clientBalance, partnershipSettlement } from './domain/finance';
 import { REMEMBER_EMAIL_KEY } from './domain/constants';
 import { useAuth } from './hooks/useAuth';
 import { useLiveQuery } from './hooks/useLiveQuery';
@@ -94,6 +97,8 @@ import { PartnershipModal, type PartnershipFormData } from './features/partnersh
 import type { PartnershipItemFormData } from './features/partnerships/ItemModal';
 import type { PartnershipTxFormData } from './features/partnerships/TxModal';
 import type { PartnershipSaleFormData, SalePaymentFormData } from './features/partnerships/SalesModal';
+import type { NewBuyerFormData } from './features/partnerships/BuyersModal';
+import type { BuyerTopUpFormData } from './features/partnerships/BuyerAccountModal';
 import { BuyerProfileModal, type BuyerSaleRef } from './features/partnerships/BuyerProfileModal';
 import { ClientModal } from './features/clients/ClientModal';
 import { TransactionModal, type TransactionFormData } from './features/clients/TransactionModal';
@@ -768,23 +773,85 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       const existing = existingId ? (current.sales ?? []).find((sale) => sale.id === existingId) : undefined;
       const lines = data.lines.map((line) => ({
         name: line.name,
+        mode: line.mode,
         quantity: line.quantity,
         unit: line.unit,
         unitPrice: line.unitPrice,
         total: line.quantity * line.unitPrice,
       }));
+      const totalAmount = lines.reduce((sum, line) => sum + line.total, 0);
+      // Auto-collect payments on create only (edits preserve existing payments).
+      let payments: SalePayment[] = existing?.payments ?? [];
+      if (!existing) {
+        const saleDate = timestampFromDateInput(data.dateInput);
+        if (data.hasDeposit && data.depositAmount > 0) {
+          payments = [
+            ...payments,
+            {
+              id: uniqueId('spaymt'),
+              amount: Math.min(data.depositAmount, totalAmount),
+              date: saleDate,
+              by: 'me',
+              notes: 'عربون',
+              source: 'cash',
+              createdBy: editor,
+              createdAt: now,
+              updatedBy: editor,
+              updatedAt: now,
+            },
+          ];
+        }
+        const collected = payments.reduce((sum, pay) => sum + (pay.amount || 0), 0);
+        const remaining = totalAmount - collected;
+        if (data.deductFromBalance && remaining > 0) {
+          payments = [
+            ...payments,
+            {
+              id: uniqueId('spaymt'),
+              amount: remaining,
+              date: saleDate,
+              by: 'me',
+              notes: 'خصم من رصيد المشتري',
+              source: 'balance',
+              createdBy: editor,
+              createdAt: now,
+              updatedBy: editor,
+              updatedAt: now,
+            },
+          ];
+        } else if (!data.hasDeposit && !data.deductFromBalance && totalAmount > 0) {
+          // No deposit, no deduction → fully-paid cash sale counting in sales totals.
+          payments = [
+            ...payments,
+            {
+              id: uniqueId('spaymt'),
+              amount: totalAmount,
+              date: saleDate,
+              by: 'me',
+              notes: 'تحصيل كاش',
+              source: 'cash',
+              createdBy: editor,
+              createdAt: now,
+              updatedBy: editor,
+              updatedAt: now,
+            },
+          ];
+        }
+      }
       const base: PartnershipSale = {
         id: existingId ?? uniqueId('psale'),
         buyerName: data.buyerName,
         lines,
-        totalAmount: lines.reduce((sum, line) => sum + line.total, 0),
+        totalAmount,
         date: timestampFromDateInput(data.dateInput),
-        payments: existing?.payments ?? [],
+        payments,
         createdBy: existing?.createdBy ?? editor,
         createdAt: existing?.createdAt ?? now,
         updatedBy: editor,
         updatedAt: now,
       };
+      if (data.buyerId) base.buyerId = data.buyerId;
+      else if (existing?.buyerId) base.buyerId = existing.buyerId;
       if (data.isAdvance) base.isAdvance = true;
       if (data.notes !== '') base.notes = data.notes;
       const updated = existingId
@@ -855,6 +922,57 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     [partnerships, user.email, user.uid],
   );
 
+  /* ----- partnership buyers (first-class, prepaid balances) ----- */
+
+  const handleAddBuyer = useCallback(
+    async (partnershipId: string, data: NewBuyerFormData): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
+      const buyer: PartnershipBuyer = {
+        id: uniqueId('pbuyer'),
+        name: data.name,
+        topUps: [],
+        createdBy: editor,
+        createdAt: now,
+        updatedBy: editor,
+        updatedAt: now,
+      };
+      if (data.phone !== '') buyer.phone = data.phone;
+      if (data.notes !== '') buyer.notes = data.notes;
+      await setPartnershipBuyers(current.id, [...(current.buyers ?? []), buyer]);
+    },
+    [partnerships, user.email, user.uid],
+  );
+
+  const handleTopUpBuyer = useCallback(
+    async (partnershipId: string, buyerId: string, data: BuyerTopUpFormData): Promise<void> => {
+      const current = partnerships.find((x) => x.id === partnershipId);
+      if (!current) return;
+      const editor = user.email ?? user.uid;
+      const now = Timestamp.now();
+      const topUp: BuyerTopUp = {
+        id: uniqueId('ptopup'),
+        amount: data.amount,
+        date: timestampFromDateInput(data.dateInput),
+        by: data.by,
+        notes: data.notes,
+        createdBy: editor,
+        createdAt: now,
+        updatedBy: editor,
+        updatedAt: now,
+      };
+      const updated = (current.buyers ?? []).map((buyer) =>
+        buyer.id === buyerId
+          ? { ...buyer, topUps: [...(buyer.topUps ?? []), topUp], updatedBy: editor, updatedAt: now }
+          : buyer,
+      );
+      await setPartnershipBuyers(current.id, updated);
+    },
+    [partnerships, user.email, user.uid],
+  );
+
   /* ----- buyer profile ----- */
 
   const [buyerProfile, setBuyerProfile] = useState<string | null>(null);
@@ -891,6 +1009,15 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       work: workClients.filter((c) => !c.isArchived && matchesBuyerName(c.name, buyerProfile)),
     };
   }, [buyerProfile, advanceClients, workClients]);
+
+  const buyerProfileBalance = useMemo(() => {
+    if (buyerProfile === null || openPartnershipId === null) return null;
+    const current = partnerships.find((x) => x.id === openPartnershipId);
+    if (!current) return null;
+    const buyer = (current.buyers ?? []).find((b) => b.name.trim() === buyerProfile.trim());
+    if (!buyer) return null;
+    return buyerBalance(buyer, current.sales ?? []);
+  }, [buyerProfile, openPartnershipId, partnerships]);
 
   const handleSettlePartnership = useCallback(
     async (partnershipId: string): Promise<void> => {
@@ -1101,6 +1228,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
                 onSaveSalePayment={(saleId, data, existingId) => void handleSaveSalePayment(open.id, saleId, data, existingId)}
                 onDeleteSalePayment={(saleId, paymentId) => void handleDeleteSalePayment(open.id, saleId, paymentId)}
                 onOpenBuyerProfile={(buyerName) => setBuyerProfile(buyerName)}
+                onAddBuyer={(data) => void handleAddBuyer(open.id, data)}
+                onTopUpBuyer={(buyerId, data) => void handleTopUpBuyer(open.id, buyerId, data)}
                 shareLinks={shareLinks}
                 onCreateShareLink={() => void handleCreateShareLink()}
                 onRevokeShareLink={(token) => void handleRevokeShareLink(token)}
@@ -1114,6 +1243,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
                   currentSales={(open.sales ?? []).filter((sale) => sale.buyerName.trim() === buyerProfile.trim())}
                   allSales={buyerAllSales}
                   privateMatches={buyerPrivateMatches}
+                  balance={buyerProfileBalance}
                 />
               ) : null}
             </>

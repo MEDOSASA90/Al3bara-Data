@@ -227,16 +227,25 @@ export interface Partnership {
   supplierPayments: SupplierPayment[];
   /** Credit sales to buyers (المباع): buyer owes totalAmount minus payments. */
   sales: PartnershipSale[];
+  /** First-class buyers with prepaid balances (match sales by buyerId, fallback name). */
+  buyers: PartnershipBuyer[];
 }
 
 /** One sold line inside a partnership sale. */
+export type SaleLineMode = 'weight' | 'lot';
+
 export interface SaleLine {
   name: string;
   quantity: number;
   unit?: string;
   unitPrice: number;
   total: number;
+  /** 'weight' = qty in tons, 'lot' = qty in lots. Defaults to 'weight'. */
+  mode?: SaleLineMode;
 }
+
+/** Where a sale collection came from: cash in hand or the buyer's prepaid balance. */
+export type SalePaymentSource = 'cash' | 'balance';
 
 /** A collection received against a partnership sale. */
 export interface SalePayment extends Audit {
@@ -245,12 +254,38 @@ export interface SalePayment extends Audit {
   date: Timestamp;
   by: Payer;
   notes: string;
+  /** Defaults to 'cash' for legacy payments. */
+  source?: SalePaymentSource;
+}
+
+/** A prepaid-balance top-up on a partnership buyer. */
+export interface BuyerTopUp extends Audit {
+  id: string;
+  amount: number;
+  date: Timestamp;
+  by: Payer;
+  notes: string;
+}
+
+/** A first-class buyer inside a partnership (prepaid balance + linked sales). */
+export interface PartnershipBuyer extends Audit {
+  id: string;
+  name: string;
+  phone?: string;
+  notes?: string;
+  topUps: BuyerTopUp[];
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedBy?: string;
+  updatedAt?: Timestamp;
 }
 
 /** A credit sale to a buyer inside a partnership. */
 export interface PartnershipSale extends Audit {
   id: string;
   buyerName: string;
+  /** Link to PartnershipBuyer.id when matched; fallback matching is by name. */
+  buyerId?: string;
   lines: SaleLine[];
   totalAmount: number;
   date: Timestamp;

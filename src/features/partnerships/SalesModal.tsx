@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Payer, PartnershipSale, PartyRef, SaleLine } from '../../domain/types';
+import type { Payer, PartnershipBuyer, PartnershipSale, PartyRef, SaleLine, SaleLineMode } from '../../domain/types';
 import { SALE_STATUS_LABELS, salePaid, saleRemaining, saleStatus } from '../../domain/finance';
 import { dateInputFromTimestamp, formatCurrency, formatDate, todayDateInput } from '../../utils/format';
 import { Modal } from '../../components/ui/Modal';
@@ -8,6 +8,7 @@ import { AuditBadge } from './AuditBadge';
 export interface SaleLineFormRow {
   key: string;
   name: string;
+  mode: SaleLineMode;
   quantity: number | '';
   unit: string;
   unitPrice: number | '';
@@ -15,9 +16,15 @@ export interface SaleLineFormRow {
 
 export interface PartnershipSaleFormData {
   buyerName: string;
-  lines: { name: string; quantity: number; unit?: string; unitPrice: number }[];
+  buyerId?: string;
+  lines: { name: string; mode: SaleLineMode; quantity: number; unit?: string; unitPrice: number }[];
   dateInput: string;
   isAdvance: boolean;
+  /** Deposit (عربون) checked → depositAmount collected as a cash payment. */
+  hasDeposit: boolean;
+  depositAmount: number;
+  /** Deduct the remaining (total − deposit) from the buyer's prepaid balance. */
+  deductFromBalance: boolean;
   notes: string;
 }
 
@@ -33,6 +40,7 @@ interface SalesModalProps {
   onClose: () => void;
   sales: PartnershipSale[];
   parties: PartyRef[];
+  buyers: PartnershipBuyer[];
   onSaveSale: (data: PartnershipSaleFormData, existingId: string | null) => void;
   onDeleteSale: (saleId: string) => void;
   onSavePayment: (saleId: string, data: SalePaymentFormData, existingId: string | null) => void;
@@ -46,7 +54,7 @@ function partyDisplayName(parties: PartyRef[], id: Payer): string {
 }
 
 function blankLineRow(): SaleLineFormRow {
-  return { key: `sl-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, name: '', quantity: '', unit: '', unitPrice: '' };
+  return { key: `sl-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, name: '', mode: 'weight', quantity: '', unit: '', unitPrice: '' };
 }
 
 function rowTotal(row: SaleLineFormRow): number {
@@ -56,7 +64,7 @@ function rowTotal(row: SaleLineFormRow): number {
 }
 
 export function SalesModal(props: SalesModalProps): ReactNode {
-  const { isOpen, onClose, sales, parties, onSaveSale, onDeleteSale, onSavePayment, onDeletePayment, onOpenBuyerProfile } = props;
+  const { isOpen, onClose, sales, parties, buyers, onSaveSale, onDeleteSale, onSavePayment, onDeletePayment, onOpenBuyerProfile } = props;
 
   const sortedSales = useMemo(() => {
     const list = [...(sales ?? [])];
@@ -75,6 +83,9 @@ export function SalesModal(props: SalesModalProps): ReactNode {
   const [rows, setRows] = useState<SaleLineFormRow[]>([blankLineRow()]);
   const [saleDate, setSaleDate] = useState(todayDateInput());
   const [isAdvance, setIsAdvance] = useState(false);
+  const [hasDeposit, setHasDeposit] = useState(false);
+  const [depositAmount, setDepositAmount] = useState<number | ''>('');
+  const [deductFromBalance, setDeductFromBalance] = useState(false);
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -100,6 +111,9 @@ export function SalesModal(props: SalesModalProps): ReactNode {
     setRows([blankLineRow()]);
     setSaleDate(todayDateInput());
     setIsAdvance(false);
+    setHasDeposit(false);
+    setDepositAmount('');
+    setDeductFromBalance(false);
     setNotes('');
     setFormError('');
     setFormOpen(true);
@@ -112,6 +126,7 @@ export function SalesModal(props: SalesModalProps): ReactNode {
       (sale.lines ?? []).map((line: SaleLine, i: number) => ({
         key: `sl-${sale.id}-${i}`,
         name: line.name,
+        mode: line.mode === 'lot' ? 'lot' : 'weight',
         quantity: line.quantity,
         unit: line.unit ?? '',
         unitPrice: line.unitPrice,
@@ -123,6 +138,9 @@ export function SalesModal(props: SalesModalProps): ReactNode {
       setSaleDate(todayDateInput());
     }
     setIsAdvance(sale.isAdvance === true);
+    setHasDeposit(false);
+    setDepositAmount('');
+    setDeductFromBalance(false);
     setNotes(sale.notes ?? '');
     setFormError('');
     setFormOpen(true);
@@ -162,17 +180,34 @@ export function SalesModal(props: SalesModalProps): ReactNode {
       setFormError('يرجى اختيار التاريخ.');
       return;
     }
+    const deposit = hasDeposit && editingId === null ? (typeof depositAmount === 'number' ? depositAmount : 0) : 0;
+    if (hasDeposit && editingId === null) {
+      if (deposit <= 0) {
+        setFormError('يرجى إدخال مبلغ العربون.');
+        return;
+      }
+      if (deposit > formTotal) {
+        setFormError('مبلغ العربون لا يمكن أن يتجاوز إجمالي البيع.');
+        return;
+      }
+    }
+    const matchedBuyer = (buyers ?? []).find((b) => b.name.trim() !== '' && b.name.trim() === buyerName.trim());
     onSaveSale(
       {
         buyerName: buyerName.trim(),
+        buyerId: matchedBuyer?.id,
         lines: rows.map((r) => ({
           name: r.name.trim(),
+          mode: r.mode,
           quantity: Number(r.quantity),
           unit: r.unit.trim() === '' ? undefined : r.unit.trim(),
           unitPrice: Number(r.unitPrice),
         })),
         dateInput: saleDate,
         isAdvance,
+        hasDeposit: hasDeposit && editingId === null,
+        depositAmount: deposit,
+        deductFromBalance: deductFromBalance && editingId === null,
         notes: notes.trim(),
       },
       editingId,
@@ -251,9 +286,25 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input value={row.name} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, name: e.target.value } : r)))} placeholder="اسم الصنف" className="input" />
+                    <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, mode: 'weight' } : r)))}
+                        className={row.mode === 'weight' ? 'btn-primary px-2 py-1 text-xs' : 'btn-ghost px-2 py-1 text-xs'}
+                      >
+                        ⚖️ وزن
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, mode: 'lot' } : r)))}
+                        className={row.mode === 'lot' ? 'btn-primary px-2 py-1 text-xs' : 'btn-ghost px-2 py-1 text-xs'}
+                      >
+                        📦 لوط
+                      </button>
+                    </div>
                     <input value={row.unit} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unit: e.target.value } : r)))} placeholder="الوحدة (اختياري)" className="input" />
-                    <input type="number" min={0} step="any" value={row.quantity} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, quantity: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder="الكمية" className="input" />
-                    <input type="number" min={0} step="any" value={row.unitPrice} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPrice: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder="سعر الوحدة" className="input" />
+                    <input type="number" min={0} step="any" value={row.quantity} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, quantity: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder={row.mode === 'lot' ? 'الكمية (لوط)' : 'الكمية (طن)'} className="input" />
+                    <input type="number" min={0} step="any" value={row.unitPrice} onChange={(e) => setRows((prev) => prev.map((r) => (r.key === row.key ? { ...r, unitPrice: e.target.value === '' ? '' : Number(e.target.value) } : r)))} placeholder={row.mode === 'lot' ? 'سعر اللوط' : 'سعر الطن'} className="input" />
                   </div>
                   <p className="text-[11px] font-bold text-slate-500">
                     الإجمالي: <span className="font-mono" dir="ltr">{rowTotal(row).toFixed(2)}</span>
@@ -270,6 +321,33 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                 الإجمالي: <span className="font-mono" dir="ltr">{formTotal.toFixed(2)}</span>
               </span>
             </div>
+            {editingId === null ? (
+              <div className="space-y-2 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
+                <label className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                  <span className="flex items-center gap-2">
+                    <input type="checkbox" checked={hasDeposit} onChange={(e) => setHasDeposit(e.target.checked)} className="h-4 w-4" />
+                    💵 عربون (مبلغ مقدم كاش)
+                  </span>
+                  {hasDeposit ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="مبلغ العربون"
+                      className="input max-w-[160px]"
+                    />
+                  ) : (
+                    <span className="text-[11px] font-medium text-slate-400">بدون عربون = بيعة كاش خالصة بكامل المبلغ</span>
+                  )}
+                </label>
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" checked={deductFromBalance} onChange={(e) => setDeductFromBalance(e.target.checked)} className="h-4 w-4" />
+                  💳 خصم من رصيد المشتري (الباقي = الإجمالي − العربون، حتى لو بالسالب)
+                </label>
+              </div>
+            ) : null}
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="ملاحظات (اختياري)" className="input" />
             {formError !== '' && <p className="text-xs font-bold text-rose-600">{formError}</p>}
             <div className="flex flex-wrap gap-2">
@@ -325,7 +403,7 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                   <div className="mt-2 space-y-1">
                     {(sale.lines ?? []).map((line, i) => (
                       <p key={i} className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                        • {line.name} — <span className="font-mono" dir="ltr">{line.quantity}{line.unit ? ` ${line.unit}` : ''} × {formatCurrency(line.unitPrice)}</span> = <span className="font-mono font-bold" dir="ltr">{formatCurrency(line.total)}</span>
+                        • {line.name} {(line.mode ?? 'weight') === 'lot' ? '📦' : '⚖️'} — <span className="font-mono" dir="ltr">{line.quantity}{line.unit ? ` ${line.unit}` : ''} × {formatCurrency(line.unitPrice)}</span> = <span className="font-mono font-bold" dir="ltr">{formatCurrency(line.total)}</span>
                       </p>
                     ))}
                   </div>
@@ -352,6 +430,7 @@ export function SalesModal(props: SalesModalProps): ReactNode {
                         <div key={pay.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs dark:bg-slate-800/60">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono font-black" dir="ltr">{formatCurrency(pay.amount)}</span>
+                            <span className="chip">{(pay.source ?? 'cash') === 'balance' ? '💳 من الرصيد' : '💵 كاش'}</span>
                             <span className="chip">{partyDisplayName(parties, pay.by)}</span>
                             <span className="text-slate-400">{formatDate(pay.date)}</span>
                             {pay.notes !== '' ? <span className="text-slate-500">{pay.notes}</span> : null}

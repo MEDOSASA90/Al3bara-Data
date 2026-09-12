@@ -3,7 +3,7 @@ import {
   COMMISSION_RATE,
   PAYMENT_DEADLINE_DAYS,
 } from './constants';
-import type { Client, Delivery, Entity, FinancialSummary, Lot, PartnershipItem, PartnershipSale, PartnershipTx, SupplierPayment, Transaction } from './types';
+import type { Client, Delivery, Entity, FinancialSummary, Lot, PartnershipBuyer, PartnershipItem, PartnershipSale, PartnershipTx, SupplierPayment, Transaction } from './types';
 
 /** Form numeric field: a real number or an empty (cleared) input. */
 export type NumericInput = number | '';
@@ -521,4 +521,41 @@ export function salesTotals(sales: PartnershipSale[]): { bought: number; paid: n
     paid += salePaid(sale);
   }
   return { bought, paid, remaining: bought - paid };
+}
+
+/* ---------- partnership buyers (prepaid balances) ---------- */
+
+/** A sale belongs to a buyer: match by buyerId, fallback to trimmed name. */
+export function saleBelongsToBuyer(
+  sale: Pick<PartnershipSale, 'buyerId' | 'buyerName'>,
+  buyer: Pick<PartnershipBuyer, 'id' | 'name'>,
+): boolean {
+  if (typeof sale.buyerId === 'string' && sale.buyerId !== '') return sale.buyerId === buyer.id;
+  return sale.buyerName.trim() !== '' && sale.buyerName.trim() === buyer.name.trim();
+}
+
+/** All sales of one buyer across a sales list (id match, fallback name). */
+export function buyerSales(
+  buyer: Pick<PartnershipBuyer, 'id' | 'name'>,
+  sales: PartnershipSale[],
+): PartnershipSale[] {
+  return (sales ?? []).filter((sale) => saleBelongsToBuyer(sale, buyer));
+}
+
+/**
+ * Buyer prepaid balance: Σ top-ups − Σ balance-source payments across the buyer's sales.
+ * Goes negative when deductions exceed top-ups (allowed).
+ */
+export function buyerBalance(
+  buyer: Pick<PartnershipBuyer, 'id' | 'name' | 'topUps'>,
+  sales: PartnershipSale[],
+): number {
+  const topped = (buyer.topUps ?? []).reduce((sum, t) => sum + (t.amount || 0), 0);
+  let deducted = 0;
+  for (const sale of buyerSales(buyer, sales ?? [])) {
+    for (const pay of sale.payments ?? []) {
+      if (pay.source === 'balance') deducted += pay.amount || 0;
+    }
+  }
+  return topped - deducted;
 }

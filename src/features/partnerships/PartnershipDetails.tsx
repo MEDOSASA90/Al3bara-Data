@@ -7,6 +7,8 @@ import type { PartnershipTxFormData } from './TxModal';
 import { LedgerModal } from './LedgerModal';
 import { SupplierModal } from './SupplierModal';
 import { SalesModal, type PartnershipSaleFormData, type SalePaymentFormData } from './SalesModal';
+import { BuyersModal, type NewBuyerFormData } from './BuyersModal';
+import type { BuyerTopUpFormData } from './BuyerAccountModal';
 
 export interface SupplierPaymentFormData {
   amount: number;
@@ -35,6 +37,8 @@ interface PartnershipDetailsProps {
   onSaveSalePayment: (saleId: string, data: SalePaymentFormData, existingId: string | null) => void;
   onDeleteSalePayment: (saleId: string, paymentId: string) => void;
   onOpenBuyerProfile: (buyerName: string) => void;
+  onAddBuyer: (data: NewBuyerFormData) => void;
+  onTopUpBuyer: (buyerId: string, data: BuyerTopUpFormData) => void;
   shareLinks: ShareLink[];
   onCreateShareLink: () => void;
   onRevokeShareLink: (token: string) => void;
@@ -72,6 +76,8 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
     onSaveSalePayment,
     onDeleteSalePayment,
     onOpenBuyerProfile,
+    onAddBuyer,
+    onTopUpBuyer,
     shareLinks,
     onCreateShareLink,
     onRevokeShareLink,
@@ -83,6 +89,7 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [salesOpen, setSalesOpen] = useState(false);
+  const [buyersOpen, setBuyersOpen] = useState(false);
 
   function shareUrl(token: string): string {
     return `${window.location.origin}${window.location.pathname}#/share/${token}`;
@@ -285,8 +292,8 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         ) : null}
       </div>
 
-      {/* Section shortcuts: ledger / supplier / sales open as popups */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      {/* Section shortcuts: ledger / supplier / sales / buyers open as popups */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <button type="button" onClick={() => setLedgerOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
           <span className="text-sm font-black text-slate-900 dark:text-white">📒 الدفتر</span>
           <span className="chip-brand">{(p.txs ?? []).length} حركة</span>
@@ -298,6 +305,10 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         <button type="button" onClick={() => setSalesOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
           <span className="text-sm font-black text-slate-900 dark:text-white">🛒 المباع</span>
           <span className="chip-brand">{(p.sales ?? []).length} بيعة • متبقي <span className="font-mono" dir="ltr">{formatCurrency(salesAgg.remaining)}</span></span>
+        </button>
+        <button type="button" onClick={() => setBuyersOpen(true)} className="card card-pad flex items-center justify-between gap-2 text-right transition hover:shadow-pop">
+          <span className="text-sm font-black text-slate-900 dark:text-white">🧑‍🤝‍🧑 المشتريين</span>
+          <span className="chip-brand">{(p.buyers ?? []).length} مشتري</span>
         </button>
       </div>
 
@@ -387,11 +398,21 @@ export function PartnershipDetails(props: PartnershipDetailsProps): ReactNode {
         onClose={() => setSalesOpen(false)}
         sales={p.sales ?? []}
         parties={parties}
+        buyers={p.buyers ?? []}
         onSaveSale={onSaveSale}
         onDeleteSale={onDeleteSale}
         onSavePayment={onSaveSalePayment}
         onDeletePayment={onDeleteSalePayment}
         onOpenBuyerProfile={onOpenBuyerProfile}
+      />
+      <BuyersModal
+        isOpen={buyersOpen}
+        onClose={() => setBuyersOpen(false)}
+        buyers={p.buyers ?? []}
+        sales={p.sales ?? []}
+        parties={parties}
+        onAddBuyer={onAddBuyer}
+        onTopUp={onTopUpBuyer}
       />
 
       <ItemModal

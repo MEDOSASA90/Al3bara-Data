@@ -20,6 +20,8 @@ interface BuyerProfileModalProps {
   currentSales: PartnershipSale[];
   allSales: BuyerSaleRef[];
   privateMatches: { advances: Client[]; work: Client[] };
+  /** Prepaid balance via buyerBalance helper (null when the buyer isn't registered). */
+  balance: number | null;
 }
 
 type BuyerTab = 'current' | 'all' | 'private';
@@ -82,7 +84,7 @@ function SaleRows(props: { sales: PartnershipSale[]; showPartnership?: (sale: Pa
 }
 
 export function BuyerProfileModal(props: BuyerProfileModalProps): ReactNode {
-  const { isOpen, onClose, buyerName, currentPartnershipName, currentSales, allSales, privateMatches } = props;
+  const { isOpen, onClose, buyerName, currentPartnershipName, currentSales, allSales, privateMatches, balance } = props;
   const [tab, setTab] = useState<BuyerTab>('current');
 
   const currentTotals = useMemo(() => salesTotals(currentSales), [currentSales]);
@@ -101,6 +103,12 @@ export function BuyerProfileModal(props: BuyerProfileModalProps): ReactNode {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`👤 ${buyerName}`}>
       <div className="space-y-4 text-right" dir="rtl">
+        {balance !== null ? (
+          <div className={`rounded-xl p-3 text-center text-xs font-bold ${balance < 0 ? 'bg-rose-50 dark:bg-rose-950' : 'bg-emerald-50 dark:bg-emerald-950'}`}>
+            <span className={balance < 0 ? 'text-rose-600' : 'text-emerald-600'}>💰 رصيد المشتري (مدفوع مقدم − مخصوم) </span>
+            <span className={`font-mono text-sm ${balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`} dir="ltr">{formatCurrency(balance)}</span>
+          </div>
+        ) : null}
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
           {TABS.map((t) => (
             <button
