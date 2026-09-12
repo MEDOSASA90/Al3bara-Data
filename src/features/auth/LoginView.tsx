@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { BrandMark } from '../../components/ui/BrandLogo';
 
 export interface LoginViewProps {
   initialEmail?: string;
@@ -39,8 +40,8 @@ export function LoginView({
     >
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-600 to-blue-600 text-3xl text-white shadow-lg">
-            🏢
+          <div className="mx-auto mb-4 w-fit">
+            <BrandMark size={72} />
           </div>
           <h1 className="text-2xl font-black text-slate-800 dark:text-slate-100">
             العبارة للتجارة والتوريدات

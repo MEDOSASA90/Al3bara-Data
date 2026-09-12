@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ViewMode } from '../../domain/types';
+import { BrandMark } from './BrandLogo';
 
 export type ShellView = ViewMode;
 
@@ -55,9 +56,7 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 right-0 z-40 hidden w-60 flex-col border-l border-slate-200/70 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 md:flex">
         <button type="button" onClick={onHome} className="flex items-center gap-2 px-5 pb-4 pt-5 text-right">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-xl text-white shadow-soft">
-            ع
-          </span>
+          <BrandMark size={40} className="shrink-0" />
           <span className="min-w-0">
             <span className="block truncate text-sm font-black text-slate-900 dark:text-white">
               العبارة للتجارة والتوريدات

@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import { getPartnershipDoc, getShareLink } from '../../data/repositories';
 import { partnershipHtml } from '../../components/print/reports';
 import { printHtmlDocument } from '../../utils/print';
+import { BrandMark } from '../../components/ui/BrandLogo';
 
 interface ShareViewProps {
   token: string;
@@ -96,7 +97,7 @@ export function ShareView({ token }: ShareViewProps): ReactNode {
       <header className="border-b border-slate-200 bg-white/90 dark:border-slate-700 dark:bg-slate-900/90">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-800 text-xl text-white">ع</span>
+            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl"><BrandMark size={40} /></span>
             <div>
               <p className="font-bold">العبارة للتجارة والتوريدات</p>
               <p className="text-xs text-slate-500">👁️ عرض مشاركة — اطلاع فقط</p>

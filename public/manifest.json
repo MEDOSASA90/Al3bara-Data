@@ -4,8 +4,8 @@
   "description": "نظام إدارة الحسابات والعملاء للعبارة للتجارة والتوريدات",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#1e40af",
+  "background_color": "#0B1F4D",
+  "theme_color": "#0B1F4D",
   "orientation": "portrait",
   "dir": "rtl",
   "lang": "ar",
@@ -24,7 +24,7 @@
     },
     {
       "src": "/apple-touch-icon.png",
-      "sizes": "192x192",
+      "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     }
