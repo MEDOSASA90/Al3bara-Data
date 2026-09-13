@@ -1,4 +1,4 @@
-const CACHE_NAME = 'al3bara-v2';
+const CACHE_NAME = 'al3bara-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -30,6 +30,15 @@ self.addEventListener('install', (event) => {
       })
   );
   self.skipWaiting();
+});
+
+// Activate: clean up ALL old caches so updates land immediately.
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => Promise.all(
+      cacheNames.filter((cacheName) => cacheName !== CACHE_NAME).map((cacheName) => caches.delete(cacheName)),
+    )).then(() => self.clients.claim()),
+  );
 });
 
 // Fetch event - serve from cache, fallback to network
@@ -71,21 +80,4 @@ self.addEventListener('fetch', (event) => {
         });
       })
   );
-});
-
-// Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
 });
