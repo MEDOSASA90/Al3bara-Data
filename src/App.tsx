@@ -82,7 +82,8 @@ import type {
   Transaction,
   ViewMode,
 } from './domain/types';
-import { activeLotsTotal, buyerBalance, calcCommission, clientBalance, partnershipSettlement } from './domain/finance';
+import { activeLotsTotal, buyerBalance, calcCommission, clientBalance, isLotUnpaid, partnershipSettlement, payments70Remaining } from './domain/finance';
+import type { Payment70Entry } from './domain/types';
 import { REMEMBER_EMAIL_KEY } from './domain/constants';
 import { useAuth } from './hooks/useAuth';
 import { useLiveQuery } from './hooks/useLiveQuery';
@@ -577,14 +578,42 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     const entity = entities.find((e) => e.id === supplyModal.entityId);
     if (!entity) return;
     const updated = entity.lots.map((lot) => {
-      const targeted = supplyModal.lotId ? lot.id === supplyModal.lotId : !lot.is70Paid;
+      const targeted = supplyModal.lotId ? lot.id === supplyModal.lotId : !isLotUnpaid(lot);
       if (!targeted) return lot;
-      const next: Lot = {
-        ...lot,
-        is70Paid: true,
-        paymentDetails: { payerName: data.payerName, date: Timestamp.fromDate(data.date) },
+      /* Full payment → legacy flag + details. Partial → append to the 70% ledger. */
+      const remaining = payments70Remaining(lot);
+      const paysFull = data.amount === undefined || data.amount >= remaining - 0.001;
+      if (paysFull) {
+        const next: Lot = {
+          ...lot,
+          is70Paid: true,
+          paymentDetails: { payerName: data.payerName, date: Timestamp.fromDate(data.date) },
+        };
+        if (data.receiptImage && next.paymentDetails) next.paymentDetails.receiptImage = data.receiptImage;
+        /* Keep the ledger consistent: record the final payment too. */
+        const finalEntry: Payment70Entry = {
+          amount: remaining,
+          date: Timestamp.fromDate(data.date),
+          payerName: data.payerName,
+          notes: 'سداد كامل',
+        };
+        if (data.receiptImage) finalEntry.receiptImage = data.receiptImage;
+        next.payments70 = [...(lot.payments70 ?? []), finalEntry];
+        return next;
+      }
+      const entry: Payment70Entry = {
+        amount: data.amount ?? 0,
+        date: Timestamp.fromDate(data.date),
+        payerName: data.payerName,
       };
-      if (data.receiptImage && next.paymentDetails) next.paymentDetails.receiptImage = data.receiptImage;
+      if (data.receiptImage) entry.receiptImage = data.receiptImage;
+      const payments = [...(lot.payments70 ?? []), entry];
+      const fullyPaid = payments.reduce((sum, p) => sum + p.amount, 0) >= lot.value70 - 0.001;
+      const next: Lot = { ...lot, payments70: payments };
+      if (fullyPaid) {
+        next.is70Paid = true;
+        next.paymentDetails = { payerName: data.payerName, date: Timestamp.fromDate(data.date) };
+      }
       return next;
     });
     await setEntityLots(entity.id, updated);

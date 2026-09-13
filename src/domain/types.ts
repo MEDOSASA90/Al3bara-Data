@@ -68,6 +68,15 @@ export interface PaymentDetails {
   receiptImage?: ImageRef | null;
 }
 
+/** One partial payment toward the 70% — keeps `is70Paid` as a derived flag. */
+export interface Payment70Entry {
+  amount: number;
+  date: Timestamp;
+  payerName?: string;
+  receiptImage?: ImageRef | null;
+  notes?: string;
+}
+
 export interface LoadingDetails {
   loaderName: string;
   date: Timestamp;
@@ -82,6 +91,8 @@ export interface Lot {
   value30: number;
   value70: number;
   is70Paid?: boolean;
+  /** Partial 70% payment history — sum >= value70 means fully paid. */
+  payments70?: Payment70Entry[];
   paymentDetails?: PaymentDetails;
   loadingDetails?: LoadingDetails;
   contractImage?: ImageRef;

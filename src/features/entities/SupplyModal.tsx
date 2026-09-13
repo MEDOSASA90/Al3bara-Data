@@ -7,6 +7,8 @@ export interface SupplyFormData {
   payerName: string;
   date: Date;
   receiptImage?: ImageRef;
+  /** Omitted/undefined = pay the full remaining 70%. A number = partial payment. */
+  amount?: number;
 }
 
 export interface SupplyModalProps {
@@ -34,18 +36,28 @@ export function SupplyModal({ isOpen, onClose, onSave, title, onFileUpload }: Su
   const [date, setDate] = useState(todayInput());
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [partialMode, setPartialMode] = useState(false);
+  const [amount, setAmount] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setPayerName('');
     setDate(todayInput());
     setReceiptFile(null);
+    setPartialMode(false);
+    setAmount('');
   }, [isOpen]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    const partialAmount = partialMode && amount.trim() !== '' ? Number(amount) : undefined;
     const done = (receiptImage: ImageRef | undefined) => {
-      onSave({ payerName: payerName.trim(), date: parseDateInput(date), receiptImage });
+      onSave({
+        payerName: payerName.trim(),
+        date: parseDateInput(date),
+        receiptImage,
+        amount: partialAmount,
+      });
       onClose();
     };
     if (receiptFile) {
@@ -89,6 +101,31 @@ export function SupplyModal({ isOpen, onClose, onSave, title, onFileUpload }: Su
             className={inputClasses}
             required
           />
+        </div>
+
+        {/* Partial payment option: record part of the 70% now, rest later. */}
+        <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={partialMode}
+              onChange={(e) => setPartialMode(e.target.checked)}
+              className="h-4 w-4 accent-indigo-600"
+            />
+            💰 دفعة جزئية (سداد جزء من الـ 70% والباقي بعدين)
+          </label>
+          {partialMode ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="مبلغ الدفعة الجزئية"
+              className={`${inputClasses} mt-2`}
+              required
+            />
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">

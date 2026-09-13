@@ -194,8 +194,25 @@ export function daysUntilDeadline(auctionDate: Timestamp, now: Date = new Date()
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-export function isLotUnpaid(lot: Pick<Lot, 'is70Paid' | 'isArchived'>): boolean {
-  return !lot.isArchived && !lot.is70Paid;
+export function isLotUnpaid(lot: Pick<Lot, 'is70Paid' | 'isArchived' | 'payments70' | 'value70'>): boolean {
+  if (lot.isArchived) return false;
+  /* A lot with partial payments is paid when the sum reaches value70. */
+  if (lot.payments70 && lot.payments70.length > 0) {
+    return payments70Total(lot) < lot.value70 - 0.001;
+  }
+  return !lot.is70Paid;
+}
+
+/* ---------- 70% payment ledger ---------- */
+
+/** Sum of partial payments recorded on a lot. */
+export function payments70Total(lot: Pick<Lot, 'payments70'>): number {
+  return (lot.payments70 ?? []).reduce((sum, p) => sum + p.amount, 0);
+}
+
+/** Remaining 70% after recorded partial payments. */
+export function payments70Remaining(lot: Pick<Lot, 'payments70' | 'value70'>): number {
+  return Math.max(0, lot.value70 - payments70Total(lot));
 }
 
 /* ---------- partnerships (no commission) ---------- */
