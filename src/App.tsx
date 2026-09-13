@@ -1462,6 +1462,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
             seenBrochureIds: [],
           }}
           seen={seenAlerts}
+          userId={user.uid}
           onMarkSeen={markAlertsSeen}
           onNavigate={(view) => onNavigate(view)}
         />

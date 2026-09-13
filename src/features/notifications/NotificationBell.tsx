@@ -5,6 +5,7 @@ import {
   requestNotificationPermission,
   showLocalNotification,
 } from '../../utils/notifications';
+import { enableFcmPush } from '../../utils/fcm';
 
 const KIND_STYLE: Record<AppAlert['kind'], string> = {
   payment_overdue: 'border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40',
@@ -20,9 +21,11 @@ export interface NotificationBellProps {
   seen: string[];
   onMarkSeen: (ids: string[]) => void;
   onNavigate: (view: 'dashboard' | 'entities') => void;
+  /** FCM token registration target (current user id). */
+  userId?: string;
 }
 
-export function NotificationBell({ alertsInput, seen, onMarkSeen, onNavigate }: NotificationBellProps): ReactNode {
+export function NotificationBell({ alertsInput, seen, onMarkSeen, onNavigate, userId }: NotificationBellProps): ReactNode {
   const [open, setOpen] = useState(false);
   const [permission, setPermission] = useState(notificationPermission());
 
@@ -48,6 +51,8 @@ export function NotificationBell({ alertsInput, seen, onMarkSeen, onNavigate }: 
     const next = await requestNotificationPermission();
     setPermission(next);
     if (next === 'granted') {
+      /* Register FCM token for real background push (app closed). */
+      if (userId) void enableFcmPush(userId);
       showLocalNotification('تم تفعيل إشعارات العبارة ✅', {
         body: 'هبعتلك إشعارات المواعيد والكراسات الجديدة واللوطات المرفوضة هنا',
         tag: 'al3bara-enabled',
