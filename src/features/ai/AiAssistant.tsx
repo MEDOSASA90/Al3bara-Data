@@ -4,6 +4,10 @@ import { askAssistant } from '../../ai/assistant';
 export interface AiAssistantProps {
   /** Business context built in App via buildBusinessSnapshot. */
   snapshot: string;
+  /** Controlled by AppShell's 🤖 drawer item — when provided the internal
+   * floating button is hidden and the panel follows these props. */
+  open?: boolean;
+  onClose?: () => void;
 }
 
 interface ChatMessage {
@@ -19,8 +23,13 @@ const QUICK_QUESTIONS: string[] = [
   'ما توقع السيولة للفترة القادمة؟',
 ];
 
-export function AiAssistant({ snapshot }: AiAssistantProps): ReactNode {
-  const [open, setOpen] = useState(false);
+export function AiAssistant({ snapshot, open: openProp, onClose }: AiAssistantProps): ReactNode {
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean): void => {
+    setOpenState(next);
+    if (!next) onClose?.();
+  };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -56,14 +65,16 @@ export function AiAssistant({ snapshot }: AiAssistantProps): ReactNode {
 
   return (
     <div dir="rtl">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="المساعد الذكي"
-        className="fixed bottom-24 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-700 text-2xl text-white shadow-xl transition-transform hover:scale-105 md:bottom-6"
-      >
-        {open ? '✕' : '🤖'}
-      </button>
+      {openProp === undefined ? (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-label="المساعد الذكي"
+          className="fixed bottom-24 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-700 text-2xl text-white shadow-xl transition-transform hover:scale-105 md:bottom-6"
+        >
+          {open ? '✕' : '🤖'}
+        </button>
+      ) : null}
 
       {open ? (
         <section

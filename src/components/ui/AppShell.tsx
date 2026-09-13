@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ViewMode } from '../../domain/types';
 import { BrandMark } from './BrandLogo';
 
@@ -35,8 +35,10 @@ export interface AppShellProps {
   onToggleTheme: () => void;
   onLogout: () => void;
   onHome: () => void;
-  /** Download a full Firestore backup JSON (sidebar button). */
+  /** Download a full Firestore backup JSON (drawer button). */
   onBackup?: () => void;
+  /** Open the AI assistant (drawer 🤖 item). */
+  onAiToggle: () => void;
   aiSlot?: ReactNode;
   /** Rendered in the top bar before the AI slot (notification bell). */
   notificationsSlot?: ReactNode;
@@ -53,26 +55,59 @@ export function AppShell({
   onLogout,
   onHome,
   onBackup,
+  onAiToggle,
   aiSlot,
   notificationsSlot,
   children,
-}: AppShellProps): ReactNode {
+}: AppShellProps) {
   const current = activeId(view);
+  /** Side drawer: hidden by default, opens via the ☰ handle. */
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  function navigateFromDrawer(target: ViewMode): void {
+    onNavigate(target);
+    setDrawerOpen(false);
+  }
+
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 right-0 z-40 hidden w-60 flex-col border-l border-slate-200/70 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 md:flex">
-        <button type="button" onClick={onHome} className="flex items-center gap-2 px-5 pb-4 pt-5 text-right">
-          <BrandMark size={40} className="shrink-0" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-black text-slate-900 dark:text-white">
-              العبارة للتجارة والتوريدات
+      {/* Drawer backdrop */}
+      {drawerOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {/* Side drawer — hidden by default, opens via the ☰ handle */}
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 flex w-64 flex-col border-l border-slate-200/70 bg-white/95 backdrop-blur transition-transform duration-200 dark:border-slate-800 dark:bg-slate-900/95 ${
+          drawerOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        aria-hidden={!drawerOpen}
+      >
+        <div className="flex items-start justify-between gap-2 px-4 pb-2 pt-4">
+          <button type="button" onClick={onHome} className="flex min-w-0 items-center gap-2 text-right">
+            <BrandMark size={40} className="shrink-0" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-black text-slate-900 dark:text-white">
+                العبارة للتجارة والتوريدات
+              </span>
+              {userEmail ? (
+                <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{userEmail}</span>
+              ) : null}
             </span>
-            {userEmail ? (
-              <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{userEmail}</span>
-            ) : null}
-          </span>
-        </button>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(false)}
+            aria-label="إغلاق القائمة"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+          >
+            ✕
+          </button>
+        </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3" aria-label="التنقل الرئيسي">
           {NAV_ITEMS.map((item) => {
             const isActive = current === item.id;
@@ -80,7 +115,7 @@ export function AppShell({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onNavigate(item.id)}
+                onClick={() => navigateFromDrawer(item.id)}
                 aria-current={isActive ? 'page' : undefined}
                 className={
                   isActive
@@ -95,6 +130,20 @@ export function AppShell({
               </button>
             );
           })}
+          {/* AI assistant lives inside the section drawer */}
+          <button
+            type="button"
+            onClick={() => {
+              onAiToggle();
+              setDrawerOpen(false);
+            }}
+            className="mt-1 flex w-full items-center gap-3 rounded-xl bg-gradient-to-l from-violet-600/10 to-indigo-600/10 px-4 py-2.5 font-bold text-violet-700 transition hover:from-violet-600/20 hover:to-indigo-600/20 dark:text-violet-300"
+          >
+            <span className="text-lg" aria-hidden="true">
+              🤖
+            </span>
+            المساعد الذكي
+          </button>
         </nav>
         <div className="border-t border-slate-200/70 p-3 dark:border-slate-800">
           {onBackup ? (
@@ -117,15 +166,24 @@ export function AppShell({
       </aside>
 
       {/* Content column */}
-      <div className="md:pr-60">
+      <div>
         {/* Slim top bar */}
         <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-2.5">
             <div className="flex min-w-0 flex-1 items-center gap-2">
+              {/* ☰ drawer handle */}
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="فتح القائمة"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              >
+                ☰
+              </button>
               <button
                 type="button"
                 onClick={onHome}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-base text-white shadow-soft md:hidden"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-base text-white shadow-soft"
                 aria-label="الصفحة الرئيسية"
               >
                 ع
@@ -149,51 +207,6 @@ export function AppShell({
 
         <main className="mx-auto max-w-6xl space-y-4 px-4 pb-24 pt-4 md:pb-10 md:pt-6">{children}</main>
       </div>
-
-      {/* Mobile bottom nav */}
-      <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-        aria-label="التنقل الرئيسي"
-      >
-        <div className="grid grid-cols-6 gap-1 px-2 pb-1.5 pt-1.5">
-          {NAV_ITEMS.map((item) => {
-            const isActive = current === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                aria-current={isActive ? 'page' : undefined}
-                className="relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5"
-              >
-                <span
-                  className={
-                    isActive
-                      ? 'flex h-7 items-center justify-center rounded-full bg-brand-600/15 px-5 text-lg dark:bg-brand-600/25'
-                      : 'text-lg text-slate-500 dark:text-slate-400'
-                  }
-                  aria-hidden="true"
-                >
-                  {item.icon}
-                </span>
-                <span
-                  className={
-                    isActive
-                      ? 'text-[11px] font-black text-brand-700 dark:text-brand-200'
-                      : 'text-[11px] font-bold text-slate-500 dark:text-slate-400'
-                  }
-                >
-                  {item.label}
-                </span>
-                {isActive ? (
-                  <span className="absolute top-0.5 h-1 w-8 rounded-full bg-brand-600" aria-hidden="true" />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }

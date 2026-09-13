@@ -371,6 +371,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [deletePartnershipId, setDeletePartnershipId] = useState<string | null>(null);
   const [deleteBrochureId, setDeleteBrochureId] = useState<string | null>(null);
+  /** AI assistant panel open state (opened via the drawer 🤖 item). */
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   /** Brochure pre-loaded into the auction modal when opened from the library. */
   const [preloadedBrochure, setPreloadedBrochure] = useState<SavedBrochure | null>(null);
   const [deleteClientReq, setDeleteClientReq] = useState<{ kind: ClientType; id: string } | null>(null);
@@ -1488,6 +1490,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
           }
         });
       }}
+      onAiToggle={() => setAiAssistantOpen(true)}
       onLogout={onLogout}
       onHome={onHome}
       notificationsSlot={
@@ -1679,7 +1682,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         onConfirm={() => void handleConfirmRestore()}
       />
 
-      <AiAssistant snapshot={businessSnapshot} />
+      <AiAssistant snapshot={businessSnapshot} open={aiAssistantOpen} onClose={() => setAiAssistantOpen(false)} />
     </AppShell>
   );
 }
