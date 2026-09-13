@@ -8,7 +8,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 /** Emergency fallback — the owner accounts. Always allowed. */
-const HARDCODED_ALLOWED = ['waledanter2026@gmail.com'];
+const HARDCODED_ALLOWED = ['waledanter2026@gmail.com', 'medosasa90@gmail.com'];
 
 const APP_CONFIG_DOC = 'appConfig';
 
