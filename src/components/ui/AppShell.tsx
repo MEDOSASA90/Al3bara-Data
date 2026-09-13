@@ -35,6 +35,8 @@ export interface AppShellProps {
   onToggleTheme: () => void;
   onLogout: () => void;
   onHome: () => void;
+  /** Download a full Firestore backup JSON (sidebar button). */
+  onBackup?: () => void;
   aiSlot?: ReactNode;
   /** Rendered in the top bar before the AI slot (notification bell). */
   notificationsSlot?: ReactNode;
@@ -50,6 +52,7 @@ export function AppShell({
   onToggleTheme,
   onLogout,
   onHome,
+  onBackup,
   aiSlot,
   notificationsSlot,
   children,
@@ -94,6 +97,15 @@ export function AppShell({
           })}
         </nav>
         <div className="border-t border-slate-200/70 p-3 dark:border-slate-800">
+          {onBackup ? (
+            <button
+              type="button"
+              onClick={onBackup}
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 font-bold text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-600/15 dark:text-emerald-300 dark:hover:bg-emerald-600/25"
+            >
+              💾 نسخة احتياطية
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onLogout}

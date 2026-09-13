@@ -7,6 +7,7 @@ import type { SavedBrochure } from './domain/types';
 import type { BrochureSessionRef } from './domain/notifications';
 import { NotificationBell } from './features/notifications/NotificationBell';
 import { BrochuresView } from './features/brochures/BrochuresView';
+import { downloadBackup } from './utils/backup';
 import { NOTIFICATIONS_SEEN_KEY } from './domain/constants';
 import {
   archiveReportHtml,
@@ -1451,6 +1452,13 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       userEmail={user.email}
       theme={theme}
       onToggleTheme={onToggleTheme}
+      onBackup={() => {
+        void downloadBackup().then((result) => {
+          if (!result.ok) {
+            alert(result.error ?? 'فشل النسخ الاحتياطي');
+          }
+        });
+      }}
       onLogout={onLogout}
       onHome={onHome}
       notificationsSlot={
