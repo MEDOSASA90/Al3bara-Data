@@ -53,6 +53,16 @@ export interface AuctionBrochureModalProps {
   predefinedBuyers: PredefinedBuyer[];
   onOpenPredefinedBuyerModal: () => void;
   onSaveAwardedEntity: (data: AwardedEntityPayload) => Promise<void>;
+  /** Auto-saves the parsed brochure into the library (Firestores كراسات المحفوظة). */
+  onSaveBrochureToLibrary?: (data: {
+    auctionDate: string;
+    title: string;
+    hallLocation: string;
+    insuranceAmount: number;
+    source: 'file' | 'ai';
+    fileName?: string;
+    entities: AuctionBrochureData['entities'];
+  }) => Promise<void>;
   rejectedLots: RejectedLot[];
   onAddRejectedLot: (input: RejectedLotInput) => Promise<void>;
   onDeleteRejectedLot: (id: string) => Promise<void>;
@@ -96,6 +106,7 @@ export function AuctionBrochureModal({
   predefinedBuyers,
   onOpenPredefinedBuyerModal,
   onSaveAwardedEntity,
+  onSaveBrochureToLibrary,
   rejectedLots,
   onAddRejectedLot,
   onDeleteRejectedLot,
@@ -359,6 +370,17 @@ export function AuctionBrochureModal({
       setCustomBrochure(parsed);
       setSelectedBrochureId(parsed.id);
       if (parsed.entities[0]) setSelectedEntityId(parsed.entities[0].id);
+      if (onSaveBrochureToLibrary) {
+        await onSaveBrochureToLibrary({
+          auctionDate: parsed.auctionDate,
+          title: parsed.title,
+          hallLocation: parsed.hallLocation,
+          insuranceAmount: parsed.insuranceAmount,
+          source: 'file',
+          fileName: file.name,
+          entities: parsed.entities,
+        });
+      }
     } catch (err) {
       setFormError(
         `حدث خطأ أثناء قراءة ملف الكراسة: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`,
@@ -402,6 +424,16 @@ function toBrochureData(result: BrochureAIResult): AuctionBrochureData {
       setCustomBrochure(converted);
       setSelectedBrochureId(converted.id);
       if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
+      if (onSaveBrochureToLibrary) {
+        await onSaveBrochureToLibrary({
+          auctionDate: converted.auctionDate,
+          title: converted.title,
+          hallLocation: converted.hallLocation,
+          insuranceAmount: converted.insuranceAmount,
+          source: 'ai',
+          entities: converted.entities,
+        });
+      }
     } catch (err) {
       setAiError(
         `تعذر التحليل الذكي (تم الاحتفاظ بنتيجة الاستخراج العادية): ${err instanceof Error ? err.message : 'خطأ غير معروف'}`,

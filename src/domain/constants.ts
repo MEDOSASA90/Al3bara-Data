@@ -20,6 +20,7 @@ export const COLLECTIONS = {
   rejectedLots: 'rejectedLots',
   partnerships: 'partnerships',
   shareLinks: 'shareLinks',
+  brochures: 'brochures',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
@@ -27,3 +28,5 @@ export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 export const THEME_STORAGE_KEY = 'app-theme';
 
 export const REMEMBER_EMAIL_KEY = 'remembered-email';
+
+export const NOTIFICATIONS_SEEN_KEY = 'al3bara-notifications-seen';

@@ -34,6 +34,7 @@ import type {
   PredefinedBuyer,
   PredefinedItem,
   RejectedLot,
+  SavedBrochure,
   ShareLink,
   ShareScope,
   SupplierPayment,
@@ -330,6 +331,94 @@ export function toRejectedLot(id: string, data: DocumentData): RejectedLot {
   return lot;
 }
 
+/* ---------- saved brochures (كراسات المحفوظة) ---------- */
+
+function asBrochureEntities(value: unknown): SavedBrochure['entities'] {
+  if (!Array.isArray(value)) return [];
+  const entities: SavedBrochure['entities'] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const rec = raw as Record<string, unknown>;
+    if (typeof rec['entityName'] !== 'string') continue;
+    const lots: SavedBrochure['entities'][number]['lots'] = [];
+    if (Array.isArray(rec['lots'])) {
+      for (const rawLot of rec['lots']) {
+        if (!rawLot || typeof rawLot !== 'object') continue;
+        const lotRec = rawLot as Record<string, unknown>;
+        if (typeof lotRec['name'] !== 'string') continue;
+        lots.push({
+          lotNumber: typeof lotRec['lotNumber'] === 'string' ? (lotRec['lotNumber'] as string) : '',
+          name: lotRec['name'] as string,
+          quantity: typeof lotRec['quantity'] === 'string' ? (lotRec['quantity'] as string) : '',
+          unit: typeof lotRec['unit'] === 'string' ? (lotRec['unit'] as string) : undefined,
+          condition: typeof lotRec['condition'] === 'string' ? (lotRec['condition'] as string) : undefined,
+          notes: typeof lotRec['notes'] === 'string' ? (lotRec['notes'] as string) : undefined,
+        });
+      }
+    }
+    const entity: SavedBrochure['entities'][number] = {
+      id: typeof rec['id'] === 'string' ? (rec['id'] as string) : `e-${entities.length + 1}`,
+      entityName: rec['entityName'] as string,
+      lots,
+    };
+    if (typeof rec['location'] === 'string' && (rec['location'] as string) !== '') {
+      entity.location = rec['location'] as string;
+    }
+    if (typeof rec['contactPerson'] === 'string' && (rec['contactPerson'] as string) !== '') {
+      entity.contactPerson = rec['contactPerson'] as string;
+    }
+    if (typeof rec['contactPhone'] === 'string' && (rec['contactPhone'] as string) !== '') {
+      entity.contactPhone = rec['contactPhone'] as string;
+    }
+    entities.push(entity);
+  }
+  return entities;
+}
+
+export function toSavedBrochure(id: string, data: DocumentData): SavedBrochure {
+  const savedAtRaw = data['savedAt'];
+  const savedAt =
+    savedAtRaw && typeof (savedAtRaw as { toMillis?: unknown }).toMillis === 'function'
+      ? (savedAtRaw as SavedBrochure['savedAt'])
+      : Timestamp.now();
+  const source = data['source'];
+  const brochure: SavedBrochure = {
+    id,
+    userId: typeof data['userId'] === 'string' ? (data['userId'] as string) : '',
+    auctionDate: typeof data['auctionDate'] === 'string' ? (data['auctionDate'] as string) : '',
+    title: typeof data['title'] === 'string' ? (data['title'] as string) : '',
+    hallLocation:
+      typeof data['hallLocation'] === 'string' ? (data['hallLocation'] as string) : '',
+    insuranceAmount:
+      typeof data['insuranceAmount'] === 'number' ? (data['insuranceAmount'] as number) : 0,
+    source:
+      source === 'file' || source === 'ai' || source === 'auto' || source === 'preloaded'
+        ? source
+        : 'file',
+    savedAt,
+    entities: asBrochureEntities(data['entities']),
+  };
+  if (typeof data['fileName'] === 'string' && (data['fileName'] as string) !== '') {
+    brochure.fileName = data['fileName'] as string;
+  }
+  return brochure;
+}
+
+/** Stable id for a brochure session — dedupes re-imports of the same session. */
+export function brochureDocId(auctionDate: string): string {
+  return `session-${auctionDate}`;
+}
+
+/** True when a brochure with the same session date is already saved. */
+export function savedBrochureExists(existing: SavedBrochure[], auctionDate: string): boolean {
+  return existing.some((b) => b.auctionDate === auctionDate);
+}
+
+/** Total lot count across all entities of a brochure. */
+export function brochureLotsCount(brochure: SavedBrochure): number {
+  return brochure.entities.reduce((sum, e) => sum + e.lots.length, 0);
+}
+
 /* ---------- live subscriptions ---------- */
 
 export function subscribeToClients(
@@ -389,6 +478,18 @@ export function subscribeToRejectedLots(
   return onSnapshot(
     ref,
     (snapshot) => onData(snapshot.docs.map((d) => toRejectedLot(d.id, d.data()))),
+    (error) => onError(error as Error),
+  );
+}
+
+export function subscribeToBrochures(
+  onData: (brochures: SavedBrochure[]) => void,
+  onError: (error: Error) => void,
+): Unsubscribe {
+  const ref = query(collection(db, COLLECTIONS.brochures), orderBy('auctionDate', 'desc'));
+  return onSnapshot(
+    ref,
+    (snapshot) => onData(snapshot.docs.map((d) => toSavedBrochure(d.id, d.data()))),
     (error) => onError(error as Error),
   );
 }
@@ -713,6 +814,44 @@ export async function createRejectedLot(input: NewRejectedLotInput): Promise<str
 
 export async function deleteRejectedLot(id: string): Promise<void> {
   await deleteDoc(doc(db, COLLECTIONS.rejectedLots, id));
+}
+
+/* ---------- brochure library writes ---------- */
+
+export interface SaveBrochureInput {
+  userId: string;
+  auctionDate: string;
+  title: string;
+  hallLocation: string;
+  insuranceAmount: number;
+  source: SavedBrochure['source'];
+  fileName?: string;
+  entities: SavedBrochure['entities'];
+}
+
+/**
+ * Saves (or replaces) a brochure under a stable per-session id so
+ * re-importing the same session updates instead of duplicating.
+ */
+export async function saveBrochure(input: SaveBrochureInput): Promise<string> {
+  const id = brochureDocId(input.auctionDate);
+  const payload: Record<string, unknown> = {
+    userId: input.userId,
+    auctionDate: input.auctionDate,
+    title: input.title,
+    hallLocation: input.hallLocation,
+    insuranceAmount: input.insuranceAmount,
+    source: input.source,
+    savedAt: Timestamp.now(),
+    entities: input.entities,
+  };
+  if (input.fileName) payload['fileName'] = input.fileName;
+  await setDoc(doc(db, COLLECTIONS.brochures, id), payload);
+  return id;
+}
+
+export async function deleteBrochure(id: string): Promise<void> {
+  await deleteDoc(doc(db, COLLECTIONS.brochures, id));
 }
 
 /** Creates an advance-client buyer record unless one with the same name exists. */

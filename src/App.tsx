@@ -3,6 +3,10 @@ import { Timestamp } from 'firebase/firestore';
 import { AppShell } from './components/ui/AppShell';
 import { Modal } from './components/ui/Modal';
 import { SplashScreen } from './components/ui/SplashScreen';
+import type { SavedBrochure } from './domain/types';
+import type { BrochureSessionRef } from './domain/notifications';
+import { NotificationBell } from './features/notifications/NotificationBell';
+import { NOTIFICATIONS_SEEN_KEY } from './domain/constants';
 import {
   archiveReportHtml,
   allClientsHtml,
@@ -15,6 +19,7 @@ import {
 } from './components/print/reports';
 import { syncBuyerCommission } from './data/commissionSync';
 import { removePartnerCommission, syncPartnerCommission } from './data/partnerCommissionSync';
+import { PRELOADED_AUCTIONS } from './data/preloadedAuctions';
 import {
   appendEntityLots,
   archiveClient,
@@ -40,12 +45,14 @@ import {
   setPartnershipSupplierPayments,
   setPartnershipTxs,
   settlePartnership,
+  saveBrochure,
   subscribeToEntities,
   subscribeToClients,
   subscribeToPartnerships,
   subscribeToPredefinedBuyers,
   subscribeToPredefinedItems,
   subscribeToRejectedLots,
+  subscribeToBrochures,
   subscribeToShareLinks,
   updateEntityMeta,
   updatePartnershipMeta,
@@ -267,6 +274,11 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       subscribeToPartnerships(onData, onError),
     [],
   );
+  const subscribeBrochuresCb = useCallback(
+    (onData: (brochures: SavedBrochure[]) => void, onError: (error: Error) => void) =>
+      subscribeToBrochures(onData, onError),
+    [],
+  );
 
   const { items: advanceClients, error: advancesError } = useLiveQuery(subscribeAdvances);
   const { items: workClients, error: workError } = useLiveQuery(subscribeWork);
@@ -275,8 +287,58 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const { items: predefinedItems } = useLiveQuery(subscribeItems);
   const { items: predefinedBuyers } = useLiveQuery(subscribeBuyers);
   const { items: rejectedLots } = useLiveQuery(subscribeRejected);
+  const { items: savedBrochures } = useLiveQuery(subscribeBrochuresCb);
 
   const dbError = advancesError ?? workError ?? entitiesError ?? partnershipsError;
+
+  /* ---------- notifications (bell + phone push) ---------- */
+  const [seenAlerts, setSeenAlerts] = useState<string[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(NOTIFICATIONS_SEEN_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markAlertsSeen = useCallback((ids: string[]) => {
+    setSeenAlerts((prev) => {
+      const merged = [...new Set([...prev, ...ids])];
+      try {
+        window.localStorage.setItem(NOTIFICATIONS_SEEN_KEY, JSON.stringify(merged));
+      } catch {
+        /* storage full/blocked — dismissal stays in-memory only */
+      }
+      return merged;
+    });
+  }, []);
+
+  /** All known sessions: saved library first, then upcoming preloaded ones. */
+  const alertSessions = useMemo<BrochureSessionRef[]>(() => {
+    const saved = savedBrochures.map<BrochureSessionRef>((b) => ({
+      id: b.id,
+      auctionDate: b.auctionDate,
+      title: b.title,
+      savedAtMs: b.savedAt.toMillis(),
+      entities: b.entities.map((e) => ({
+        entityName: e.entityName,
+        lots: e.lots.map((l) => ({ lotNumber: l.lotNumber, name: l.name })),
+      })),
+    }));
+    const savedDates = new Set(saved.map((s) => s.auctionDate));
+    const upcoming = PRELOADED_AUCTIONS.filter((b) => !savedDates.has(b.auctionDate)).map<BrochureSessionRef>(
+      (b) => ({
+        id: b.id,
+        auctionDate: b.auctionDate,
+        title: b.title,
+        entities: b.entities.map((e) => ({
+          entityName: e.entityName,
+          lots: e.lots.map((l) => ({ lotNumber: l.lotNumber, name: l.name })),
+        })),
+      }),
+    );
+    return [...saved, ...upcoming];
+  }, [savedBrochures]);
 
   const [entitiesFilter, setEntitiesFilter] = useState<LotStatusFilter>('all');
 
@@ -452,6 +514,30 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     }
     setBrochureOpen(false);
   }, [entities, refreshCommission, user.uid]);
+
+  /**
+   * Keeps every imported brochure in the library (Firestore, stable per-session
+   * id so re-imports update instead of duplicating). Called automatically when
+   * a brochure is uploaded / smart-parsed in the auction modal.
+   */
+  const handleSaveBrochureToLibrary = useCallback(
+    async (data: {
+      auctionDate: string;
+      title: string;
+      hallLocation: string;
+      insuranceAmount: number;
+      source: SavedBrochure['source'];
+      fileName?: string;
+      entities: SavedBrochure['entities'];
+    }): Promise<void> => {
+      try {
+        await saveBrochure({ ...data, userId: user.uid });
+      } catch (err) {
+        console.warn('Brochure library save skipped:', err);
+      }
+    },
+    [user.uid],
+  );
 
   const handleSaveLot = useCallback(async (data: LotFormData): Promise<void> => {
     const entity = entities.find((e) => e.id === lotModal.entityId);
@@ -1339,6 +1425,19 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       onToggleTheme={onToggleTheme}
       onLogout={onLogout}
       onHome={onHome}
+      notificationsSlot={
+        <NotificationBell
+          alertsInput={{
+            entities,
+            rejectedLots,
+            sessions: alertSessions,
+            seenBrochureIds: [],
+          }}
+          seen={seenAlerts}
+          onMarkSeen={markAlertsSeen}
+          onNavigate={(view) => onNavigate(view)}
+        />
+      }
     >
         {dbError ? (
           <div className="card border-debit-500/40 bg-debit-50 p-4 text-debit-700 dark:bg-debit-600/10 dark:text-rose-200" role="alert">
@@ -1416,6 +1515,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         predefinedBuyers={predefinedBuyers}
         onOpenPredefinedBuyerModal={() => setBuyerQuickAdd(true)}
         onSaveAwardedEntity={(payload) => handleSaveAwardedEntity(payload)}
+        onSaveBrochureToLibrary={(data) => handleSaveBrochureToLibrary(data)}
         rejectedLots={rejectedLots}
         onAddRejectedLot={(input) => handleAddRejectedLot(input)}
         onDeleteRejectedLot={(id) => handleDeleteRejectedLot(id)}

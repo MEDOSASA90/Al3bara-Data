@@ -35,6 +35,8 @@ export interface AppShellProps {
   onLogout: () => void;
   onHome: () => void;
   aiSlot?: ReactNode;
+  /** Rendered in the top bar before the AI slot (notification bell). */
+  notificationsSlot?: ReactNode;
   children: ReactNode;
 }
 
@@ -48,6 +50,7 @@ export function AppShell({
   onLogout,
   onHome,
   aiSlot,
+  notificationsSlot,
   children,
 }: AppShellProps): ReactNode {
   const current = activeId(view);
@@ -117,6 +120,7 @@ export function AppShell({
               <h1 className="truncate text-base font-black text-slate-900 sm:text-lg dark:text-white">{title}</h1>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {notificationsSlot}
               {aiSlot}
               <button
                 type="button"

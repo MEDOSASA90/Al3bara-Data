@@ -126,6 +126,46 @@ export interface FinancialSummary {
   netBalance: number;
 }
 
+/** How a brochure entered the library. */
+export type BrochureSource = 'preloaded' | 'file' | 'ai' | 'auto';
+
+/** One entity inside a saved brochure (shape mirrors preloadedAuctions ParsedEntity). */
+export interface SavedBrochureEntity {
+  id: string;
+  entityName: string;
+  location?: string;
+  contactPerson?: string;
+  contactPhone?: string;
+  lots: {
+    lotNumber: string;
+    name: string;
+    quantity: string;
+    unit?: string;
+    condition?: string;
+    notes?: string;
+  }[];
+}
+
+/**
+ * A full auction brochure (كراسة جلسة مزاد) saved in Firestore so every
+ * imported session is kept — entities + lots stay queryable for the
+ * upcoming automation that pulls new brochures from the authority site.
+ */
+export interface SavedBrochure {
+  id: string;
+  userId: string;
+  /** Session date YYYY-MM-DD (kept as string to match preloaded data). */
+  auctionDate: string;
+  title: string;
+  hallLocation: string;
+  insuranceAmount: number;
+  source: BrochureSource;
+  /** Original file name when uploaded from a PDF/text file. */
+  fileName?: string;
+  savedAt: Timestamp;
+  entities: SavedBrochureEntity[];
+}
+
 /** A party in a partnership. 'me' (the app user) is reserved and never appears here. */
 export interface Partner {
   id: string;
