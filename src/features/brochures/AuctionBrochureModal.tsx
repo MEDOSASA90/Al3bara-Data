@@ -125,6 +125,8 @@ export function AuctionBrochureModal({
   const [lotsState, setLotsState] = useState<Record<string, LotRowState>>({});
   const [formError, setFormError] = useState('');
   const [isParsingFile, setIsParsingFile] = useState(false);
+  /** Multi-file upload progress line shown under the upload buttons. */
+  const [uploadProgress, setUploadProgress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [extractedText, setExtractedText] = useState('');
   const [isAiParsing, setIsAiParsing] = useState(false);
@@ -389,39 +391,75 @@ export function AuctionBrochureModal({
   async function handleFileUpload(
     event: React.ChangeEvent<HTMLInputElement>,
   ): Promise<void> {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
     setIsParsingFile(true);
     setFormError('');
-    try {
-      const text = file.name.toLowerCase().endsWith('.pdf')
-        ? await extractTextFromPDF(file)
-        : await file.text();
-      setExtractedText(text);
-      setAiError('');
-      const parsed = parseBrochureText(text);
-      setCustomBrochure(parsed);
-      setSelectedBrochureId(parsed.id);
-      if (parsed.entities[0]) setSelectedEntityId(parsed.entities[0].id);
-      if (onSaveBrochureToLibrary) {
-        await onSaveBrochureToLibrary({
-          auctionDate: parsed.auctionDate,
-          title: parsed.title,
-          hallLocation: parsed.hallLocation,
-          insuranceAmount: parsed.insuranceAmount,
-          source: 'file',
-          fileName: file.name,
-          entities: parsed.entities,
-        });
+    setAiError('');
+    setUploadProgress(`📖 جاري قراءة ${files.length} ${files.length === 1 ? 'كراسة' : 'كراسات'}...`);
+    let parsedCount = 0;
+    let aiCount = 0;
+    const failures: string[] = [];
+
+    for (const file of files) {
+      try {
+        const text = file.name.toLowerCase().endsWith('.pdf')
+          ? await extractTextFromPDF(file)
+          : await file.text();
+        setExtractedText(text);
+        const parsed = parseBrochureText(text);
+        setCustomBrochure(parsed);
+        setSelectedBrochureId(parsed.id);
+        if (parsed.entities[0]) setSelectedEntityId(parsed.entities[0].id);
+        parsedCount += 1;
+
+        /* Smart analysis runs automatically right after extraction. */
+        setUploadProgress(`✨ جاري التحليل الذكي: ${file.name}`);
+        try {
+          const result = await brochureTextToData(text);
+          const converted = toBrochureData(result);
+          setCustomBrochure(converted);
+          setSelectedBrochureId(converted.id);
+          if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
+          aiCount += 1;
+          if (onSaveBrochureToLibrary) {
+            await onSaveBrochureToLibrary({
+              auctionDate: converted.auctionDate,
+              title: converted.title,
+              hallLocation: converted.hallLocation,
+              insuranceAmount: converted.insuranceAmount,
+              source: 'ai',
+              fileName: file.name,
+              entities: converted.entities,
+            });
+          }
+        } catch {
+          /* AI failed — keep the plain extraction (already set) and save it instead. */
+          if (onSaveBrochureToLibrary) {
+            await onSaveBrochureToLibrary({
+              auctionDate: parsed.auctionDate,
+              title: parsed.title,
+              hallLocation: parsed.hallLocation,
+              insuranceAmount: parsed.insuranceAmount,
+              source: 'file',
+              fileName: file.name,
+              entities: parsed.entities,
+            });
+          }
+        }
+      } catch (err) {
+        failures.push(`${file.name}: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`);
       }
-    } catch (err) {
-      setFormError(
-        `حدث خطأ أثناء قراءة ملف الكراسة: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`,
-      );
-    } finally {
-      setIsParsingFile(false);
-      event.target.value = '';
     }
+
+    if (failures.length > 0) {
+      setFormError(`تعذر قراءة ${failures.length} ${failures.length === 1 ? 'ملف' : 'ملفات'}:\n${failures.join('\n')}`);
+    }
+    setUploadProgress(
+      `✅ تم رفع ${parsedCount} ${parsedCount === 1 ? 'كراسة' : 'كراسات'}${aiCount > 0 ? ` — اتحللت ذكيًا ${aiCount}` : ''}`,
+    );
+    setIsParsingFile(false);
+    event.target.value = '';
   }
 
 function toBrochureData(result: BrochureAIResult): AuctionBrochureData {
@@ -545,10 +583,11 @@ function toBrochureData(result: BrochureAIResult): AuctionBrochureData {
             </div>
             <div className="flex flex-wrap gap-2">
               <label className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-xs font-black text-slate-950 shadow-md transition-all hover:scale-[1.02]">
-                <span>{isParsingFile ? '⏳ جاري القراءة...' : '📤 رفع كراسة PDF'}</span>
+                <span>{isParsingFile ? '⏳ جاري الرفع والتحليل...' : '📤 رفع كراسات (متعدد)'}</span>
                 <input
                   type="file"
                   accept=".pdf,text/plain"
+                  multiple
                   onChange={handleFileUpload}
                   className="hidden"
                   disabled={isParsingFile}
@@ -561,11 +600,16 @@ function toBrochureData(result: BrochureAIResult): AuctionBrochureData {
                   disabled={isAiParsing || isParsingFile}
                   className="cursor-pointer rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-black text-white shadow-md transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isAiParsing ? '⏳ جاري التحليل الذكي...' : 'تحليل ذكي ✨'}
+                  {isAiParsing ? '⏳ جاري التحليل الذكي...' : 'إعادة تحليل ذكي ✨'}
                 </button>
               ) : null}
             </div>
           </div>
+          {uploadProgress ? (
+            <p className={`text-xs font-bold ${formError ? 'text-rose-300' : 'text-emerald-300'}`}>
+              {uploadProgress}
+            </p>
+          ) : null}
           <div>
             <label className="mb-1 block text-xs font-black text-amber-300">
               📅 الجلسة / الكراسة ({sessionDropdownItems.length}):
