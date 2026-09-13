@@ -6,6 +6,7 @@ export type ViewMode =
   | 'advances'
   | 'work'
   | 'partnerships'
+  | 'brochures'
   | 'archiveMenu'
   | 'archiveEntities'
   | 'archiveWork'

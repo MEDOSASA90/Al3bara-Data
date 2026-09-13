@@ -6,6 +6,7 @@ import { SplashScreen } from './components/ui/SplashScreen';
 import type { SavedBrochure } from './domain/types';
 import type { BrochureSessionRef } from './domain/notifications';
 import { NotificationBell } from './features/notifications/NotificationBell';
+import { BrochuresView } from './features/brochures/BrochuresView';
 import { NOTIFICATIONS_SEEN_KEY } from './domain/constants';
 import {
   archiveReportHtml,
@@ -35,6 +36,7 @@ import {
   deleteEntity,
   deletePartnership,
   deleteRejectedLot,
+  deleteBrochure,
   restoreClient,
   revokeShareLink,
   setClientTransactions,
@@ -204,6 +206,7 @@ function QuickAddModal({ isOpen, title, placeholder, confirmLabel, onClose, onSa
 const VIEW_TITLES: Record<ViewMode, string> = {
   dashboard: 'لوحة التحكم',
   entities: 'الجهات واللوطات',
+  brochures: 'مكتبة الكراسات',
   advances: 'حسابات السلف',
   work: 'حسابات الشغل',
   partnerships: 'حسابات الشركاء',
@@ -365,6 +368,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const [openPartnershipId, setOpenPartnershipId] = useState<string | null>(null);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [deletePartnershipId, setDeletePartnershipId] = useState<string | null>(null);
+  const [deleteBrochureId, setDeleteBrochureId] = useState<string | null>(null);
+  /** Brochure pre-loaded into the auction modal when opened from the library. */
+  const [preloadedBrochure, setPreloadedBrochure] = useState<SavedBrochure | null>(null);
   const [deleteClientReq, setDeleteClientReq] = useState<{ kind: ClientType; id: string } | null>(null);
   const [deleteLotReq, setDeleteLotReq] = useState<{ entityId: string; lotId: string } | null>(null);
   const [deleteTxReq, setDeleteTxReq] = useState<{ kind: ClientType; clientId: string; txId: string } | null>(null);
@@ -1233,6 +1239,28 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
             />
           </div>
         );
+      case 'brochures':
+        return (
+          <BrochuresView
+            brochures={savedBrochures}
+            onOpenInAuction={(brochure) => {
+              setPreloadedBrochure(brochure);
+              setBrochureOpen(true);
+            }}
+            onDelete={(id) => {
+              if (deleteBrochureId === id) {
+                void deleteBrochure(id);
+                setDeleteBrochureId(null);
+              } else {
+                setDeleteBrochureId(id);
+              }
+            }}
+            onOpenAuctionModal={() => {
+              setPreloadedBrochure(null);
+              setBrochureOpen(true);
+            }}
+          />
+        );
       case 'entities':
         return (
           <div className="space-y-4">
@@ -1511,7 +1539,11 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
 
       <AuctionBrochureModal
         isOpen={brochureOpen}
-        onClose={() => setBrochureOpen(false)}
+        onClose={() => {
+          setBrochureOpen(false);
+          setPreloadedBrochure(null);
+        }}
+        preloadedBrochure={preloadedBrochure}
         predefinedBuyers={predefinedBuyers}
         onOpenPredefinedBuyerModal={() => setBuyerQuickAdd(true)}
         onSaveAwardedEntity={(payload) => handleSaveAwardedEntity(payload)}

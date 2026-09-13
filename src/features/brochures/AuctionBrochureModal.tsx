@@ -18,7 +18,7 @@ import {
   EMPTY_LOT_CALC,
 } from '../../domain/finance';
 import type { LotCalcState, NumericInput } from '../../domain/finance';
-import type { PredefinedBuyer, RejectedLot } from '../../domain/types';
+import type { PredefinedBuyer, RejectedLot, SavedBrochure } from '../../domain/types';
 import { formatCurrency } from '../../utils/format';
 import { extractTextFromPDF, parseBrochureText } from '../../utils/brochureParser';
 
@@ -50,6 +50,8 @@ export interface RejectedLotInput {
 export interface AuctionBrochureModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Saved brochure from the library, opened via «ترسية» in BrochuresView. */
+  preloadedBrochure?: SavedBrochure | null;
   predefinedBuyers: PredefinedBuyer[];
   onOpenPredefinedBuyerModal: () => void;
   onSaveAwardedEntity: (data: AwardedEntityPayload) => Promise<void>;
@@ -103,6 +105,7 @@ function inputValue(value: NumericInput): string {
 export function AuctionBrochureModal({
   isOpen,
   onClose,
+  preloadedBrochure,
   predefinedBuyers,
   onOpenPredefinedBuyerModal,
   onSaveAwardedEntity,
@@ -163,6 +166,36 @@ export function AuctionBrochureModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeBrochure, selectedBrochureId]);
+
+  /* Load a saved library brochure when opened via «ترسية». */
+  useEffect(() => {
+    if (!isOpen || !preloadedBrochure) return;
+    const converted: AuctionBrochureData = {
+      id: preloadedBrochure.id,
+      auctionDate: preloadedBrochure.auctionDate,
+      title: preloadedBrochure.title,
+      hallLocation: preloadedBrochure.hallLocation,
+      insuranceAmount: preloadedBrochure.insuranceAmount,
+      entities: preloadedBrochure.entities.map((entity, entityIndex) => ({
+        id: entity.id || `saved-entity-${entityIndex + 1}`,
+        entityName: entity.entityName,
+        location: entity.location,
+        contactPerson: entity.contactPerson,
+        contactPhone: entity.contactPhone,
+        lots: entity.lots.map((lot) => ({
+          lotNumber: lot.lotNumber,
+          name: lot.name,
+          quantity: lot.quantity,
+          unit: lot.unit ?? 'عدد',
+          condition: lot.condition ?? 'خردة',
+          notes: lot.notes,
+        })),
+      })),
+    };
+    setCustomBrochure(converted);
+    setSelectedBrochureId(converted.id);
+    if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
+  }, [isOpen, preloadedBrochure]);
 
   const activeEntity = useMemo(() => {
     if (!activeBrochure) return null;

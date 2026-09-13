@@ -13,6 +13,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'الرئيسية', icon: '🏠' },
   { id: 'entities', label: 'الجهات', icon: '🏭' },
+  { id: 'brochures', label: 'الكراسات', icon: '📚' },
   { id: 'advances', label: 'السلف', icon: '💰' },
   { id: 'work', label: 'الشغل', icon: '🧾' },
   { id: 'partnerships', label: 'الشركاء', icon: '🤝' },
