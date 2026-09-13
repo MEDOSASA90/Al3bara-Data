@@ -1,33 +1,24 @@
-const CACHE_NAME = 'al3bara-v3';
+const CACHE_NAME = 'al3bara-v4';
 const urlsToCache = [
-  '/',
-  '/index.html',
   '/favicon.png',
   '/icon-192x192.png',
   '/icon-512x512.png',
   '/manifest.json'
 ];
 
-// Install event - cache files
+// Install event - cache static assets only (never the app shell itself —
+// index.html always comes from the network so updates land immediately).
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
-        // Add files individually to handle duplicates gracefully
         return Promise.all(
           urlsToCache.map((url) => {
-            return cache.add(url).catch((error) => {
-              console.log('Failed to cache:', url, error);
-              // Continue even if one file fails
-              return Promise.resolve();
-            });
+            return cache.add(url).catch(() => Promise.resolve());
           })
         );
       })
-      .catch((error) => {
-        console.log('Cache installation failed:', error);
-      })
+      .catch(() => undefined)
   );
   self.skipWaiting();
 });
@@ -41,43 +32,40 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch: network-first for app shell & JS (fresh builds always win),
+// cache-first only for static icons. Offline fallback when the network fails.
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Cache hit - return response
-        if (response) {
-          return response;
-        }
+  const url = new URL(event.request.url);
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-        // Clone the request
-        const fetchRequest = event.request.clone();
+  const isStaticAsset =
+    url.pathname.startsWith('/assets/') ||
+    ['/favicon.png', '/icon-192x192.png', '/icon-512x512.png', '/manifest.json'].includes(url.pathname);
 
-        return fetch(fetchRequest).then((response) => {
-          // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+  if (isStaticAsset) {
+    // Cache-first: hashed filenames change on every build, so old entries
+    // never shadow new ones.
+    event.respondWith(
+      caches.match(event.request).then((cached) =>
+        cached ??
+        fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-
-          // Clone the response
-          const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              // Check if already cached to avoid duplicate error
-              cache.match(event.request).then((cachedResponse) => {
-                if (!cachedResponse) {
-                  cache.put(event.request, responseToCache);
-                }
-              });
-            })
-            .catch((error) => {
-              console.log('Cache put failed:', error);
-            });
-
           return response;
-        });
+        })
+      )
+    );
+    return;
+  }
+
+  // Network-first for the app shell (/, /index.html, service-worker.js…).
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        return response;
       })
+      .catch(() => caches.match('/index.html'))
   );
 });
