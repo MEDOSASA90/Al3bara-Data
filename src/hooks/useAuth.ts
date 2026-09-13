@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { REMEMBER_EMAIL_KEY } from '../domain/constants';
+import { isEmailAllowed } from '../utils/access';
 import type { SessionUser } from '../domain/types';
 
 export function toSessionUser(user: FirebaseUser): SessionUser {
@@ -36,8 +37,23 @@ export function useAuth(): {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser ? toSessionUser(firebaseUser) : null);
-      setAuthLoading(false);
+      if (!firebaseUser) {
+        setUser(null);
+        setAuthLoading(false);
+        return;
+      }
+      /* Allowlist gate: signed-in users outside the list are signed out. */
+      const email = firebaseUser.email ?? '';
+      void isEmailAllowed(email).then((allowed) => {
+        if (allowed) {
+          setUser(toSessionUser(firebaseUser));
+        } else {
+          void signOut(auth);
+          setUser(null);
+          setLoginError('هذا الحساب غير مصرح له بالدخول — تواصل مع صاحب التطبيق.');
+        }
+        setAuthLoading(false);
+      });
     });
     return unsubscribe;
   }, []);
@@ -45,6 +61,13 @@ export function useAuth(): {
   const login = async (email: string, password: string, remember: boolean): Promise<void> => {
     setLoginError(null);
     try {
+      /* Gate first: reject unauthorized emails before touching Firebase auth. */
+      const allowed = await isEmailAllowed(email);
+      if (!allowed) {
+        const message = 'هذا الحساب غير مصرح له بالدخول — تواصل مع صاحب التطبيق.';
+        setLoginError(message);
+        throw new Error(message);
+      }
       await signInWithEmailAndPassword(auth, email, password);
       if (remember) {
         localStorage.setItem(REMEMBER_EMAIL_KEY, email);
@@ -52,7 +75,10 @@ export function useAuth(): {
         localStorage.removeItem(REMEMBER_EMAIL_KEY);
       }
     } catch (error) {
-      const message = loginErrorMessage(error);
+      const message =
+        error instanceof Error && error.message.includes('غير مصرح')
+          ? error.message
+          : loginErrorMessage(error);
       setLoginError(message);
       throw new Error(message);
     }
