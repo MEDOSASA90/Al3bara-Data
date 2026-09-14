@@ -7,7 +7,8 @@ import type {
   ParsedLot,
 } from '../../data/preloadedAuctions';
 import { AUCTION_HALL_DEFAULT, AUCTION_INSURANCE_DEFAULT, STAMP_FEE_DEFAULT } from '../../domain/constants';
-import { brochureTextToData } from '../../ai/parseBrochureAI';
+import { analyzeBrochureText, analyzeBrochureImages } from '../../utils/brochureAnalyzer';
+import type { SaveBrochurePayload } from './BrochuresView';
 import type { BrochureAIResult } from '../../ai/schemas';
 import {
   applyQuantityChange,
@@ -21,6 +22,7 @@ import type { LotCalcState, NumericInput } from '../../domain/finance';
 import type { PredefinedBuyer, RejectedLot, SavedBrochure } from '../../domain/types';
 import { formatCurrency } from '../../utils/format';
 import { extractTextFromPDF, parseBrochureText } from '../../utils/brochureParser';
+import { renderPdfPagesToImages } from '../../utils/pdfImages';
 
 export interface AwardedLotPayload {
   lotNumber: string;
@@ -56,15 +58,7 @@ export interface AuctionBrochureModalProps {
   onOpenPredefinedBuyerModal: () => void;
   onSaveAwardedEntity: (data: AwardedEntityPayload) => Promise<void>;
   /** Auto-saves the parsed brochure into the library (Firestores كراسات المحفوظة). */
-  onSaveBrochureToLibrary?: (data: {
-    auctionDate: string;
-    title: string;
-    hallLocation: string;
-    insuranceAmount: number;
-    source: 'file' | 'ai';
-    fileName?: string;
-    entities: AuctionBrochureData['entities'];
-  }) => Promise<void>;
+  onSaveBrochureToLibrary?: (data: SaveBrochurePayload) => Promise<void>;
   rejectedLots: RejectedLot[];
   onAddRejectedLot: (input: RejectedLotInput) => Promise<void>;
   onDeleteRejectedLot: (id: string) => Promise<void>;
@@ -397,7 +391,6 @@ export function AuctionBrochureModal({
     setFormError('');
     setAiError('');
     setUploadProgress(`📖 جاري قراءة ${files.length} ${files.length === 1 ? 'كراسة' : 'كراسات'}...`);
-    let parsedCount = 0;
     let aiCount = 0;
     const failures: string[] = [];
 
@@ -407,40 +400,22 @@ export function AuctionBrochureModal({
           ? await extractTextFromPDF(file)
           : await file.text();
         setExtractedText(text);
-        const parsed = parseBrochureText(text);
-        setCustomBrochure(parsed);
-        setSelectedBrochureId(parsed.id);
-        if (parsed.entities[0]) setSelectedEntityId(parsed.entities[0].id);
-        parsedCount += 1;
+        setUploadProgress(`✨ جاري التحليل الدقيق: ${file.name}`);
 
-        /* Smart analysis runs automatically right after extraction. */
-        setUploadProgress(`✨ جاري التحليل الذكي: ${file.name}`);
+        /* Precision pipeline: single-shot → chunked merge → vision → rule parser. */
+        let saved = false;
         try {
-          const result = await brochureTextToData(text);
-          if (aiResultTooSparse(result, text)) {
-            /* Model bailed after lot 1 — rule-based parser gets every lot. */
-            const fallbackParsed = parseBrochureText(text);
-            setCustomBrochure(fallbackParsed);
-            setSelectedBrochureId(fallbackParsed.id);
-            if (fallbackParsed.entities[0]) setSelectedEntityId(fallbackParsed.entities[0].id);
-            parsedCount += 0;
-            if (onSaveBrochureToLibrary) {
-              await onSaveBrochureToLibrary({
-                auctionDate: fallbackParsed.auctionDate,
-                title: fallbackParsed.title,
-                hallLocation: fallbackParsed.hallLocation,
-                insuranceAmount: fallbackParsed.insuranceAmount,
-                source: 'file',
-                fileName: file.name,
-                entities: fallbackParsed.entities,
-              });
-            }
-          } else {
-            const converted = toBrochureData(result);
+          const analysis = await analyzeBrochureText(text, file.name, (_done, _total, note) => {
+            setUploadProgress(`🧠 ${file.name} — ${note}`);
+          });
+          if (analysis.result && analysis.result.entities.length > 0) {
+            const converted = toBrochureData(analysis.result);
             setCustomBrochure(converted);
             setSelectedBrochureId(converted.id);
             if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
             aiCount += 1;
+            saved = true;
+            const lotsTotal = analysis.result.entities.reduce((s, e) => s + e.lots.length, 0);
             if (onSaveBrochureToLibrary) {
               await onSaveBrochureToLibrary({
                 auctionDate: converted.auctionDate,
@@ -449,12 +424,57 @@ export function AuctionBrochureModal({
                 insuranceAmount: converted.insuranceAmount,
                 source: 'ai',
                 fileName: file.name,
+                  sourceText: text.length > 50000 ? text.slice(0, 50000) : text,
                 entities: converted.entities,
               });
             }
+            setUploadProgress(`✅ ${file.name} — ${lotsTotal} لوط (${analysis.method === 'text-chunked' ? 'تحليل مقسم دقيق' : analysis.method === 'vision' ? 'تحليل بالصور' : 'تحليل نصي'})`);
+            continue;
           }
+          void analysis.error;
         } catch {
-          /* AI failed — keep the plain extraction (already set) and save it instead. */
+          /* fall through to vision / rule parser */
+        }
+
+        /* Vision on rendered pages (broken text layer). */
+        if (!saved && file.name.toLowerCase().endsWith('.pdf')) {
+          try {
+            const pageImages = await renderPdfPagesToImages(file);
+            const vision = await analyzeBrochureImages(pageImages, (_done, _total, note) => {
+              setUploadProgress(`👁️ ${file.name} — ${note}`);
+            });
+            if (vision.result && vision.result.entities.length > 0) {
+              const converted = toBrochureData(vision.result);
+              setCustomBrochure(converted);
+              setSelectedBrochureId(converted.id);
+              if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
+              aiCount += 1;
+              saved = true;
+              if (onSaveBrochureToLibrary) {
+                await onSaveBrochureToLibrary({
+                  auctionDate: converted.auctionDate,
+                  title: converted.title,
+                  hallLocation: converted.hallLocation,
+                  insuranceAmount: converted.insuranceAmount,
+                  source: 'ai',
+                  fileName: file.name,
+                  sourceText: text.length > 50000 ? text.slice(0, 50000) : text,
+                  entities: converted.entities,
+                });
+              }
+              setUploadProgress(`✅ ${file.name} — اتحللت بالصور`);
+            }
+          } catch {
+            /* fall through to rule parser */
+          }
+        }
+
+        /* Final fallback: rule-based parser (always produces something). */
+        if (!saved) {
+          const parsed = parseBrochureText(text);
+          setCustomBrochure(parsed);
+          setSelectedBrochureId(parsed.id);
+          if (parsed.entities[0]) setSelectedEntityId(parsed.entities[0].id);
           if (onSaveBrochureToLibrary) {
             await onSaveBrochureToLibrary({
               auctionDate: parsed.auctionDate,
@@ -463,6 +483,7 @@ export function AuctionBrochureModal({
               insuranceAmount: parsed.insuranceAmount,
               source: 'file',
               fileName: file.name,
+                  sourceText: text.length > 50000 ? text.slice(0, 50000) : text,
               entities: parsed.entities,
             });
           }
@@ -476,7 +497,7 @@ export function AuctionBrochureModal({
       setFormError(`تعذر قراءة ${failures.length} ${failures.length === 1 ? 'ملف' : 'ملفات'}:\n${failures.join('\n')}`);
     }
     setUploadProgress(
-      `✅ تم رفع ${parsedCount} ${parsedCount === 1 ? 'كراسة' : 'كراسات'}${aiCount > 0 ? ` — اتحللت ذكيًا ${aiCount}` : ''}`,
+      `✅ اتحللت ${aiCount} ${aiCount === 1 ? 'كراسة' : 'كراسات'} ذكيًا${failures.length > 0 ? ` — ${failures.length} بالمحلل النصي` : ''}`,
     );
     setIsParsingFile(false);
     event.target.value = '';
@@ -511,6 +532,8 @@ function countedLotsInText(text: string): number {
   return matches.length;
 }
 
+void countedLotsInText;
+
 function aiResultTooSparse(result: BrochureAIResult, text: string): boolean {
   const totalLots = result.entities.reduce((sum, e) => sum + e.lots.length, 0);
   const mentioned = countedLotsInText(text);
@@ -518,48 +541,59 @@ function aiResultTooSparse(result: BrochureAIResult, text: string): boolean {
   return mentioned >= 3 && totalLots < Math.min(mentioned, 3);
 }
 
+void aiResultTooSparse;
+
   async function handleSmartAnalysis(): Promise<void> {
     if (extractedText.trim() === '' || isAiParsing) return;
     setIsAiParsing(true);
     setAiError('');
     try {
-      const result = await brochureTextToData(extractedText);
-      if (aiResultTooSparse(result, extractedText)) {
-        /* Model bailed after lot 1 — fall back to the rule-based parser
-         * which extracts every lot, and save that instead. */
-        const fallback = parseBrochureText(extractedText);
-        setCustomBrochure(fallback);
-        setSelectedBrochureId(fallback.id);
-        if (fallback.entities[0]) setSelectedEntityId(fallback.entities[0].id);
+      /* Same precision pipeline as upload: single → chunked merge → vision. */
+      const analysis = await analyzeBrochureText(extractedText, activeBrochure?.title ?? 'كراسة مزاد', (done, total, note) => {
+        setAiError(`🧠 ${note} (${done}/${total})...`);
+      });
+      if (analysis.result && analysis.result.entities.length > 0) {
+        const converted = toBrochureData(analysis.result);
+        setCustomBrochure(converted);
+        setSelectedBrochureId(converted.id);
+        if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
         if (onSaveBrochureToLibrary) {
           await onSaveBrochureToLibrary({
-            auctionDate: fallback.auctionDate,
-            title: fallback.title,
-            hallLocation: fallback.hallLocation,
-            insuranceAmount: fallback.insuranceAmount,
-            source: 'file',
-            entities: fallback.entities,
+            auctionDate: converted.auctionDate,
+            title: converted.title,
+            hallLocation: converted.hallLocation,
+            insuranceAmount: converted.insuranceAmount,
+            source: 'ai',
+            sourceText: extractedText.length > 50000 ? extractedText.slice(0, 50000) : extractedText,
+            entities: converted.entities,
           });
         }
+        const lotsTotal = analysis.result.entities.reduce((s, e) => s + e.lots.length, 0);
         setAiError(
-          'التحليل الذكي رجّع لوطات أقل من الموجودة في الكراسة — تم استخراج كل اللوطات بالمحلل النصي تلقائيًا ✅',
+          analysis.method === 'text-chunked'
+            ? `✅ تحليل مقسم دقيق: ${lotsTotal} لوط في ${analysis.result.entities.length} جهة`
+            : `✅ ${lotsTotal} لوط في ${analysis.result.entities.length} جهة`,
         );
         return;
       }
-      const converted = toBrochureData(result);
-      setCustomBrochure(converted);
-      setSelectedBrochureId(converted.id);
-      if (converted.entities[0]) setSelectedEntityId(converted.entities[0].id);
+      /* Pipeline failed → rule-based parser fallback. */
+      const fallback = parseBrochureText(extractedText);
+      setCustomBrochure(fallback);
+      setSelectedBrochureId(fallback.id);
+      if (fallback.entities[0]) setSelectedEntityId(fallback.entities[0].id);
       if (onSaveBrochureToLibrary) {
         await onSaveBrochureToLibrary({
-          auctionDate: converted.auctionDate,
-          title: converted.title,
-          hallLocation: converted.hallLocation,
-          insuranceAmount: converted.insuranceAmount,
-          source: 'ai',
-          entities: converted.entities,
+          auctionDate: fallback.auctionDate,
+          title: fallback.title,
+          hallLocation: fallback.hallLocation,
+          insuranceAmount: fallback.insuranceAmount,
+          source: 'file',
+          entities: fallback.entities,
         });
       }
+      setAiError(
+        'تعذر التحليل الذكي — تم استخراج اللوطات بالمحلل النصي تلقائيًا ✅',
+      );
     } catch (err) {
       setAiError(
         `تعذر التحليل الذكي (تم الاحتفاظ بنتيجة الاستخراج العادية): ${err instanceof Error ? err.message : 'خطأ غير معروف'}`,
@@ -638,10 +672,10 @@ function aiResultTooSparse(result: BrochureAIResult, text: string): boolean {
             </div>
             <div className="flex flex-wrap gap-2">
               <label className="cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-xs font-black text-slate-950 shadow-md transition-all hover:scale-[1.02]">
-                <span>{isParsingFile ? '⏳ جاري الرفع والتحليل...' : '📤 رفع كراسات (متعدد)'}</span>
+                <span>{isParsingFile ? '⏳ جاري الرفع والتحليل...' : '📤 رفع كراسات (اختار كلهم مع بعض)'}</span>
                 <input
                   type="file"
-                  accept=".pdf,text/plain"
+                  accept=".pdf,text/plain,application/pdf"
                   multiple
                   onChange={handleFileUpload}
                   className="hidden"

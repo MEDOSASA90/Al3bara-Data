@@ -34,6 +34,26 @@ export interface BrochuresViewProps {
   onOpenInAuction?: (brochure: SavedBrochure) => void;
   onDelete: (id: string) => void;
   onOpenAuctionModal: () => void;
+  /** Re-run precision analysis on every brochure that has no lots yet. */
+  onAnalyzeAll?: () => void;
+  /** True while bulk analysis is running. */
+  isAnalyzingAll?: boolean;
+  /** Bulk analysis progress line. */
+  analyzeAllProgress?: string;
+  /** Re-run precision analysis on THIS saved brochure (per-item button). */
+  onAnalyzeOne?: (brochure: SavedBrochure) => void;
+}
+
+/** Payload the modal sends to App for the library save. */
+export interface SaveBrochurePayload {
+  auctionDate: string;
+  title: string;
+  hallLocation: string;
+  insuranceAmount: number;
+  source: SavedBrochure['source'];
+  fileName?: string;
+  sourceText?: string;
+  entities: SavedBrochure['entities'];
 }
 
 export function BrochuresView({
@@ -41,6 +61,9 @@ export function BrochuresView({
   onOpenInAuction,
   onDelete,
   onOpenAuctionModal,
+  onAnalyzeAll,
+  isAnalyzingAll,
+  analyzeAllProgress,
 }: BrochuresViewProps): ReactNode {
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | SavedBrochure['source']>('all');
@@ -111,6 +134,32 @@ export function BrochuresView({
           📤 استيراد كراسة
         </button>
       </div>
+
+      {/* Bulk precision analysis: re-analyze every brochure with no lots. */}
+      {onAnalyzeAll ? (() => {
+        const emptyBrochures = brochures.filter((b) => brochureLotsCount(b) === 0);
+        if (emptyBrochures.length === 0) return null;
+        return (
+          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-950/40">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold text-violet-700 dark:text-violet-300">
+                🧠 {emptyBrochures.length} {emptyBrochures.length === 1 ? 'كراسة بدون لوطات' : 'كراسات بدون لوطات'} — محتاجة تحليل ذكي
+              </p>
+              <button
+                type="button"
+                onClick={onAnalyzeAll}
+                disabled={isAnalyzingAll}
+                className="min-h-[40px] cursor-pointer rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-xs font-black text-white shadow-md transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isAnalyzingAll ? '⏳ جاري التحليل...' : `✨ حللهم كله مرة واحدة (${emptyBrochures.length})`}
+              </button>
+            </div>
+            {analyzeAllProgress ? (
+              <p className="mt-2 text-[11px] font-bold text-violet-600 dark:text-violet-400">{analyzeAllProgress}</p>
+            ) : null}
+          </div>
+        );
+      })() : null}
 
       {/* list */}
       {filtered.length === 0 ? (

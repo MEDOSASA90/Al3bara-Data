@@ -401,6 +401,9 @@ export function toSavedBrochure(id: string, data: DocumentData): SavedBrochure {
   if (typeof data['fileName'] === 'string' && (data['fileName'] as string) !== '') {
     brochure.fileName = data['fileName'] as string;
   }
+  if (typeof data['sourceText'] === 'string' && (data['sourceText'] as string) !== '') {
+    brochure.sourceText = data['sourceText'] as string;
+  }
   return brochure;
 }
 
@@ -826,6 +829,8 @@ export interface SaveBrochureInput {
   insuranceAmount: number;
   source: SavedBrochure['source'];
   fileName?: string;
+  /** Extracted raw text kept for re-analysis (تحليل ذكي). */
+  sourceText?: string;
   entities: SavedBrochure['entities'];
 }
 
@@ -846,6 +851,7 @@ export async function saveBrochure(input: SaveBrochureInput): Promise<string> {
     entities: input.entities,
   };
   if (input.fileName) payload['fileName'] = input.fileName;
+  if (input.sourceText) payload['sourceText'] = input.sourceText;
   await setDoc(doc(db, COLLECTIONS.brochures, id), payload);
   return id;
 }

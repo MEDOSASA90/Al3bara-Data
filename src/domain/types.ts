@@ -143,7 +143,7 @@ export type BrochureSource = 'preloaded' | 'file' | 'ai' | 'auto';
 
 /** One entity inside a saved brochure (shape mirrors preloadedAuctions ParsedEntity). */
 export interface SavedBrochureEntity {
-  id: string;
+  id?: string;
   entityName: string;
   location?: string;
   contactPerson?: string;
@@ -174,6 +174,8 @@ export interface SavedBrochure {
   source: BrochureSource;
   /** Original file name when uploaded from a PDF/text file. */
   fileName?: string;
+  /** Extracted raw text — kept so «تحليل ذكي» can re-run precision analysis. */
+  sourceText?: string;
   savedAt: Timestamp;
   entities: SavedBrochureEntity[];
 }
