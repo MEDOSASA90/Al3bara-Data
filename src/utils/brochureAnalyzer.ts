@@ -107,22 +107,37 @@ export async function analyzeBrochureText(
   /* Pass 2: chunked analysis (the precision path for large brochures). */
   const chunks = splitIntoChunks(text, 18);
   if (chunks.length > 1) {
-    const chunkResults: BrochureAIResult[] = [];
-    let failures = 0;
+    const chunkResults = new Map<number, BrochureAIResult>();
     for (let i = 0; i < chunks.length; i += 1) {
       onProgress?.(i, chunks.length, `تحليل الجزء ${i + 1} من ${chunks.length}`);
       try {
-        chunkResults.push(await brochureTextToData(chunks[i]));
+        chunkResults.set(i, await brochureTextToData(chunks[i]));
       } catch {
-        failures += 1;
+        /* Rate-limit backoff: wait before the next chunk (429s cascade). */
+        await new Promise((resolve) => setTimeout(resolve, 4000));
       }
     }
-    if (chunkResults.length > 0) {
-      const merged = mergeChunkResults(chunkResults, today, fallbackTitle);
+    /* Retry ONLY the failed chunks (transient 429/overload), twice max. */
+    for (let pass = 0; pass < 2 && chunkResults.size < chunks.length; pass += 1) {
+      const failed = Array.from({ length: chunks.length }, (_, i) => i).filter((i) => !chunkResults.has(i));
+      if (failed.length === 0) break;
+      onProgress?.(chunkResults.size, chunks.length, `إعادة محاولة ${failed.length} أجزاء فاشلة`);
+      for (const i of failed) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        try {
+          chunkResults.set(i, await brochureTextToData(chunks[i]));
+        } catch {
+          /* stays failed for the next pass */
+        }
+      }
+    }
+    if (chunkResults.size > 0) {
+      const merged = mergeChunkResults(Array.from(chunkResults.values()), today, fallbackTitle);
+      const failedCount = chunks.length - chunkResults.size;
       return {
         result: merged,
         method: 'text-chunked',
-        error: failures > 0 ? `${failures} أجزاء تعذر تحليلها من ${chunks.length}` : undefined,
+        error: failedCount > 0 ? `${failedCount} أجزاء تعذر تحليلها من ${chunks.length}` : undefined,
       };
     }
   }
