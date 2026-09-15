@@ -15,6 +15,7 @@ export interface BrochureAILot {
   quantity: string;
   unit?: string;
   condition?: string;
+  notes?: string;
 }
 
 export interface BrochureAIEntity {
@@ -38,8 +39,10 @@ function validateBrochureLot(value: unknown): BrochureAILot {
   };
   const unit = getOptionalString(value, 'unit');
   const condition = getOptionalString(value, 'condition');
+  const notes = getOptionalString(value, 'notes');
   if (unit) lot.unit = unit;
   if (condition) lot.condition = condition;
+  if (notes) lot.notes = notes;
   if (lot.name.trim() === '') throw new Error('invalid lot name');
   return lot;
 }

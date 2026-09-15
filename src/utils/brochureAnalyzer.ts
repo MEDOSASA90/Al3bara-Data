@@ -7,6 +7,7 @@
 import { brochureTextToData, brochureImagesToData } from '../ai/parseBrochureAI';
 import type { BrochureAIResult, BrochureAIEntity } from '../ai/schemas';
 import type { InlineImage } from '../ai/geminiClient';
+import { parseBrochureText } from './brochureParser';
 
 export interface ChunkProgress {
   (done: number, total: number, note: string): void;
@@ -78,10 +79,10 @@ export interface AnalyzeBrochureResult {
 }
 
 /**
- * Precision extraction pipeline for ONE brochure text:
- * 1. Single-pass text analysis (fast, works for small brochures).
- * 2. If the result is suspiciously small → chunked analysis with merge.
- * 3. If no text or chunking fails → vision on page images.
+ * Precision brochure extraction pipeline for ONE brochure text:
+ * 1. Rule-based parser (always produces something).
+ * 2. If sparse → single-shot AI.
+ * 3. If still sparse or fails → chunked AI merge → vision.
  */
 export async function analyzeBrochureText(
   text: string,
@@ -91,7 +92,20 @@ export async function analyzeBrochureText(
   const today = new Date().toISOString().split('T')[0] ?? '';
   const fallbackTitle = fileName.replace(/\.pdf$/i, '').trim() || 'كراسة مزاد';
 
-  /* Pass 1: single-shot. */
+  /* Pass 1: rule-based parser (always produces something). */
+  try {
+    const ruleResult = parseBrochureText(text, today);
+    const totalLots = ruleResult.entities.reduce((s, e) => s + e.lots.length, 0);
+    const mentioned = (text.match(/(?:لوط|اللوط)\s*[:-]?\s*(\d+)/gi) ?? []).length;
+    /* Good enough when the rule parser found lots and the text isn't a 100+ lot monster. */
+    if (totalLots >= Math.min(3, mentioned || 3) && text.length < 60000) {
+      return { result: ruleResult as unknown as BrochureAIResult, method: 'text' };
+    }
+  } catch {
+    /* fall through to AI */
+  }
+
+  /* Pass 2: single-shot AI (fast, works for small brochures). */
   try {
     const single = await brochureTextToData(text);
     const totalLots = single.entities.reduce((s, e) => s + e.lots.length, 0);
@@ -104,7 +118,7 @@ export async function analyzeBrochureText(
     /* fall through to chunking */
   }
 
-  /* Pass 2: chunked analysis (the precision path for large brochures). */
+  /* Pass 3: chunked analysis (the precision path for large brochures). */
   const chunks = splitIntoChunks(text, 18);
   if (chunks.length > 1) {
     const chunkResults = new Map<number, BrochureAIResult>();

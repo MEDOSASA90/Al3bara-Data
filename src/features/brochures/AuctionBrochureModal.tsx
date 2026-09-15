@@ -521,6 +521,7 @@ function toBrochureData(result: BrochureAIResult): AuctionBrochureData {
         quantity: lot.quantity,
         unit: lot.unit ?? 'عدد',
         condition: lot.condition ?? 'خردة',
+        notes: lot.notes,
       })),
     })),
   };
@@ -548,7 +549,7 @@ void aiResultTooSparse;
     setIsAiParsing(true);
     setAiError('');
     try {
-      /* Same precision pipeline as upload: single → chunked merge → vision. */
+      /* Precision pipeline: rule-based → single-shot AI → chunked merge → vision. */
       const analysis = await analyzeBrochureText(extractedText, activeBrochure?.title ?? 'كراسة مزاد', (done, total, note) => {
         setAiError(`🧠 ${note} (${done}/${total})...`);
       });

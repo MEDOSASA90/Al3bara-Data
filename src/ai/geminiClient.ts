@@ -1,4 +1,5 @@
 import { asJson, getArray, isRecord } from './jsonGuard';
+import { nextGeminiKey } from './keyPool';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
@@ -47,6 +48,10 @@ interface Part {
 }
 
 function requireApiKey(): string {
+  /* Key pool first (rotates across VITE_GEMINI_API_KEY_2..N), then the
+   * primary key — multiplies the free-tier quota for large brochures. */
+  const pooled = nextGeminiKey();
+  if (pooled !== '') return pooled;
   const key = getGeminiApiKey();
   if (key.trim() === '') {
     throw new Error('مفتاح Gemini غير مضبوط. أضف VITE_GEMINI_API_KEY في ملف البيئة.');
