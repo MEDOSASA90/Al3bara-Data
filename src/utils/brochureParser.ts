@@ -44,11 +44,101 @@ function pad2(value: string): string {
   return value.padStart(2, '0');
 }
 
+/** Strip tatweel + diacritics (PDF extraction artifacts that break table/header matching). */
+function cleanLine(line: string): string {
+  return line.replace(/[\u0640]/g, '').replace(/[\u064B-\u065F\u0670]/g, '').trim();
+}
+
+/** Normalize Arabic for entity matching: unify hamza/ta-marbuta/alef-maksura, drop non-Arabic. */
+function normalizeKey(name: string): string {
+  return name
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآا]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\u0600-\u06FF0-9a-zA-Z]/g, '')
+    .trim();
+}
+
+/** Dice coefficient on character bigrams (1 = identical). */
+function similarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const bigrams = (s: string): Set<string> => {
+    const set = new Set<string>();
+    for (let i = 0; i < s.length - 1; i += 1) set.add(s.slice(i, i + 2));
+    return set;
+  };
+  const A = bigrams(a);
+  const B = bigrams(b);
+  let intersection = 0;
+  for (const x of A) if (B.has(x)) intersection += 1;
+  return (2 * intersection) / (A.size + B.size);
+}
+
+interface PageRecord {
+  page: number;
+  entityName: string;
+  entityKey: string;
+  lotLines: string[]; // lines after the table header
+}
+
+const SPEC_WORD_RE = /^(فولت|فول|امبير|أمبير|لتر|مكعب|واط|وات|سم\b|بوصة|حصان|A|فاز|×)/i;
+
+/** Lines that continue a previous row (legal note / contact) — never a lot start. */
+const NOISE_RE = /(لسنة|قانون|البيئة|للتواصل|التواصل)/;
+
+/** The lot table header row (كل صفحة تفاصيل فيها: لوط الصنف الوحدة الكمية الحالة). */
+function isTableHeader(line: string): boolean {
+  return /الصنف/.test(line) && (/لو.?ط/.test(line) || /الوحدة|الكمية|الحالة/.test(line)) && line.length < 95;
+}
+
+/** Split page-marked text into {page, lines} records. */
+function splitPages(rawText: string): { page: number; lines: string[] }[] {
+  const markerRe = /--- PAGE (\d+)[^\n]*---/g;
+  const records: { page: number; lines: string[] }[] = [];
+  const matches = [...rawText.matchAll(markerRe)];
+  for (let i = 0; i < matches.length; i += 1) {
+    const page = Number(matches[i][1]);
+    const start = (matches[i].index ?? 0) + matches[i][0].length;
+    const end = i + 1 < matches.length ? (matches[i + 1].index ?? rawText.length) : rawText.length;
+    const lines = rawText
+      .slice(start, end)
+      .split('\n')
+      .map(cleanLine)
+      .filter((l) => l !== '');
+    records.push({ page, lines });
+  }
+  return records;
+}
+
 /**
- * Parser for Egyptian General Authority for Government Services
- * (الهيئة العامة للخدمات الحكومية) auction brochures:
- * extracts the session date, entity headers, and lot rows
- * (lot number, description, quantity/unit, condition).
+ * Extract the entity header + lot rows from ONE detail page.
+ * Every detail page: [page#] [date] [entity header] [table header] [lot rows...].
+ */
+function readPage(record: { page: number; lines: string[] }): PageRecord | null {
+  const { page, lines } = record;
+  if (lines.length < 3) return null;
+  /* Index pages (فهرس / تابع فهرس) list entity names + lot counts — not lot tables. */
+  if (/فهرس/.test(lines.join(' '))) return null;
+  const dateIdx = lines.findIndex((l) => /مزاد/.test(l));
+  if (dateIdx < 0) return null;
+  const tableIdx = lines.findIndex(isTableHeader);
+  const stopIdx = tableIdx > dateIdx ? tableIdx : Math.min(dateIdx + 2, lines.length);
+  const headerParts = lines.slice(dateIdx + 1, stopIdx).filter((l) => !/^\d{1,3}$/.test(l));
+  const entityName = headerParts.join(' ').replace(/\s+/g, ' ').trim();
+  if (entityName === '' || normalizeKey(entityName) === 'بضائع') return null;
+  const lotLines = tableIdx > dateIdx ? lines.slice(tableIdx + 1) : lines.slice(stopIdx);
+  return { page, entityName, entityKey: normalizeKey(entityName), lotLines };
+}
+
+/**
+ * Parser for الهيئة العامة للخدمات الحكومية auction brochures.
+ * Structure-driven (ground truth = the pages themselves):
+ * 1. Per detail page: entity header = lines between the date and the lot-table header.
+ * 2. Consecutive pages with the same entity (OCR spelling drift, similarity >= 0.8) merge.
+ * 3. Main lots: rows starting with a plausible sequential number; other rows are
+ *    sub-rows of the last main lot (spec lines, notes, quantities).
  */
 export function parseBrochureText(
   rawText: string,
@@ -68,96 +158,95 @@ export function parseBrochureText(
     auctionDate = `${dateMatchYMD[1]}-${pad2(dateMatchYMD[2])}-${pad2(dateMatchYMD[3])}`;
   }
 
-  const entities: ParsedEntity[] = [];
-  const lines = rawText.split('\n');
-  let currentEntity: ParsedEntity | null = null;
+  const pages = splitPages(rawText);
+  const pageRecords: PageRecord[] = [];
+  for (const record of pages) {
+    if (record.page <= 3) continue; // cover pages
+    const read = readPage(record);
+    if (read) pageRecords.push(read);
+  }
 
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const isEntityHeader =
-      /^(محافظة|مديرية|إدارة|ادارة|مستشفى|مستشفي|الهيئة|وزارة|مجلس ومدينة|مجلس مدينة|رئاسة|مركز|البنك الزراعي|جامعة|قطاع|مصلحة|صندوق|الاتحاد|المجلس|الوحدة المحلية)/i.test(
-        line,
-      );
-
+  // Merge consecutive pages of the same entity (OCR drift across page breaks).
+  interface EntityAcc {
+    entityName: string;
+    entityKey: string;
+    records: PageRecord[];
+  }
+  const accs: EntityAcc[] = [];
+  for (const record of pageRecords) {
+    const prev = accs[accs.length - 1];
     if (
-      isEntityHeader &&
-      line.length > 8 &&
-      line.length < 160 &&
-      !line.includes('قانون') &&
-      !line.includes('الرسوم')
+      prev &&
+      record.page - prev.records[prev.records.length - 1].page <= 2 &&
+      similarity(prev.entityKey, record.entityKey) >= 0.8
     ) {
-      if (currentEntity && currentEntity.lots.length > 0) {
-        entities.push(currentEntity);
+      if (record.entityName.length > prev.entityName.length) {
+        prev.entityName = record.entityName;
+        prev.entityKey = record.entityKey;
       }
-      currentEntity = {
-        id: `parsed-entity-${entities.length + 1}-${Date.now()}`,
-        entityName: line,
-        lots: [],
-      };
+      prev.records.push(record);
       continue;
     }
+    accs.push({
+      entityName: record.entityName,
+      entityKey: record.entityKey,
+      records: [record],
+    });
+  }
 
-    const lotMatch =
-      line.match(/(?:لوط|اللوط)\s*[:-]?\s*(\d+)/i) ??
-      line.match(/^(\d+)\s+(.+?)(?:عدد|طن|كيلو|كجم|متر)/);
-    const looksLikeLot =
-      lotMatch !== null ||
-      line.includes('خردة') ||
-      line.includes('كهنة') ||
-      line.includes('كسر') ||
-      line.includes('راكد');
-
-    if (currentEntity && looksLikeLot) {
-      const lotNum =
-        lotMatch?.[1] != null && lotMatch[1] !== ''
-          ? lotMatch[1]
-          : `${currentEntity.lots.length + 1}`;
-
-      let unit = 'عدد';
-      if (line.includes('طن')) unit = 'طن';
-      else if (line.includes('كيلو') || line.includes('كجم')) unit = 'كيلو';
-      else if (line.includes('متر')) unit = 'متر';
-
-      const qtyMatch = line.match(/([\d.,]+)\s*(طن|كيلو|كجم|عدد|متر|طقم)/);
-      const quantity =
-        qtyMatch?.[1] && qtyMatch[2]
-          ? `${qtyMatch[1]} ${qtyMatch[2]}`
-          : 'حسب الكشف';
-
-      let condition = 'خردة';
-      if (line.includes('كهنة')) condition = 'كهنة';
-      else if (line.includes('كسر')) condition = 'كسر';
-      else if (line.includes('جديد')) condition = 'راكد جديد';
-      else if (line.includes('مستعمل')) condition = 'مستعمل';
-
-      const lotDesc = line
-        .replace(/^--- PAGE \d+ ---/g, '')
-        .replace(/(?:لوط|اللوط)\s*[:-]?\s*\d+/g, '')
-        .replace(/monaksat.*$/gi, '')
-        .trim();
-
-      if (lotDesc.length > 3) {
-        const lot: ParsedLot = {
-          lotNumber: lotNum,
-          name: lotDesc.slice(0, 180),
-          quantity,
-          unit,
-          condition,
-        };
-        currentEntity.lots.push(lot);
+  const stamp = Date.now();
+  const entities: ParsedEntity[] = accs.map((acc, entityIndex) => {
+    const lots: ParsedLot[] = [];
+    let lastNum = 0;
+    let subRows: string[] = [];
+    const flushSubs = (): void => {
+      if (lots.length > 0 && subRows.length > 0) {
+        const prev = lots[lots.length - 1];
+        prev.notes = [prev.notes ?? '', ...subRows].join(' ').slice(0, 400) || prev.notes;
+      }
+      subRows = [];
+    };
+    for (const record of acc.records) {
+      for (const line of record.lotLines) {
+        const match = line.match(/^(\d{1,3})\s+(\S.*)/);
+        if (match) {
+          const text = match[2];
+          const num = Number(match[1]);
+          if (!NOISE_RE.test(text) && num <= 99 && !SPEC_WORD_RE.test(text)) {
+            const plausible =
+              lastNum === 0
+                ? true
+                : num === lastNum + 1 || (num > lastNum && num <= lastNum + 5);
+            if (plausible) {
+              flushSubs();
+              lastNum = num;
+              const qtyMatch = text.match(/بالعدد\s*(\d[\d.,ر]*)|عدد\s*(\d[\d.,ر]*)|([\d.,ر]+)\s*(?:طن|كيلو|كجم)/);
+              const conditionMatch = text.match(/خردة|كهنة|كسر|راكد جديد|راكد|مستعمل|جديد/);
+              lots.push({
+                lotNumber: String(num),
+                name: text.slice(0, 200),
+                quantity: qtyMatch ? `${qtyMatch[1] ?? qtyMatch[2] ?? qtyMatch[3] ?? ''}`.trim() || 'حسب الكشف' : 'حسب الكشف',
+                unit: /طن/.test(text) ? 'طن' : /كيلو|كجم/.test(text) ? 'كيلو' : 'عدد',
+                condition: conditionMatch ? conditionMatch[0] : '',
+              });
+              continue;
+            }
+          }
+        }
+        subRows.push(line);
       }
     }
-  }
-
-  if (currentEntity && currentEntity.lots.length > 0) {
-    entities.push(currentEntity);
-  }
+    flushSubs();
+    return {
+      id: `parsed-entity-${entityIndex + 1}-${stamp}`,
+      entityName: acc.entityName,
+      lots,
+    };
+  });
 
   if (entities.length === 0) {
     entities.push({
-      id: `entity-general-${Date.now()}`,
+      id: `entity-general-${stamp}`,
       entityName: 'بضائع جهات حكومية - مزاد الهيئة العامة للخدمات الحكومية',
       lots: [
         {
@@ -172,7 +261,7 @@ export function parseBrochureText(
   }
 
   return {
-    id: `auction-${auctionDate}-${Date.now()}`,
+    id: `auction-${auctionDate}-${stamp}`,
     auctionDate,
     title: `جلسة مزاد بضائع جهات حكومية بتاريخ ${auctionDate}`,
     hallLocation: AUCTION_HALL_DEFAULT,
