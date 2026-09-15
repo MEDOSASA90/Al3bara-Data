@@ -83,6 +83,124 @@ interface PageRecord {
   lotLines: string[]; // lines after the table header
 }
 
+interface EntityAcc {
+  entityName: string;
+  entityKey: string;
+  records: PageRecord[];
+}
+
+interface IndexEntry {
+  name: string;
+  startPage: number;
+  expectedLots: number;
+}
+
+/**
+ * Parse the فهرس (index) pages into (entity, startPage, expectedLots) entries.
+ * The index lists entities as: <name> <startPage> <lotCount>.
+ */
+function parseIndexEntries(
+  pages: { page: number; lines: string[] }[],
+): IndexEntry[] {
+  const indexPages = pages
+    .filter((p) => p.page > 3 && p.lines.some((l) => /فهرس/.test(l)))
+    .sort((a, b) => a.page - b.page);
+  if (indexPages.length === 0) return [];
+
+  const indexLines: string[] = [];
+  for (const p of indexPages) {
+    for (const rawLine of p.lines) {
+      const line = rawLine;
+      if (line === '' || /م البي|اللوطات|مزاد\s*\d/.test(line)) continue;
+      if (/^\d{1,3}$/.test(line)) continue;
+      indexLines.push(line);
+    }
+  }
+  const joined = indexLines.join('\n');
+  const pairRe = /(\d{1,3})\s+(\d{1,2})(?=[\s\n]|$)/g;
+  const pairs: { page: number; lots: number; idx: number }[] = [];
+  let m: RegExpExecArray | null;
+  let lastPage = 0;
+  while ((m = pairRe.exec(joined))) {
+    const page = Number(m[1]);
+    const lots = Number(m[2]);
+    if (page >= 9 && page <= 200 && lots >= 1 && lots <= 30 && page >= lastPage) {
+      pairs.push({ page, lots, idx: m.index });
+      lastPage = page;
+    }
+  }
+  if (pairs.length < 5) return [];
+
+  const entries: IndexEntry[] = [];
+  for (const [i, pr] of pairs.entries()) {
+    const prev = i > 0 ? pairs[i - 1] : null;
+    const prevEnd = prev
+      ? prev.idx + String(prev.page).length + 1 + String(prev.lots).length
+      : 0;
+    let nameText = joined
+      .slice(prevEnd, pr.idx)
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const si = nameText.indexOf('بضائع جهات حكومية');
+    if (si >= 0) nameText = nameText.slice(si + 'بضائع جهات حكومية'.length).trim();
+    entries.push({ name: nameText, startPage: pr.page, expectedLots: pr.lots });
+  }
+  return entries;
+}
+
+/** فهرس-driven: entity i owns pages [start_i .. start_{i+1} - 1]. Names from page headers. */
+function segmentByIndex(
+  entries: IndexEntry[],
+  pageRecords: PageRecord[],
+): EntityAcc[] {
+  const accs: EntityAcc[] = [];
+  for (const [i, entry] of entries.entries()) {
+    const endPage =
+      i + 1 < entries.length ? entries[i + 1].startPage - 1 : Number.MAX_SAFE_INTEGER;
+    const segRecords = pageRecords.filter(
+      (r) => r.page >= entry.startPage && r.page <= endPage,
+    );
+    if (segRecords.length === 0) continue;
+    const best = segRecords.reduce(
+      (acc, r) => (r.entityName.length > acc.entityName.length ? r : acc),
+      segRecords[0],
+    );
+    accs.push({
+      entityName: best.entityName,
+      entityKey: best.entityKey,
+      records: segRecords,
+    });
+  }
+  return accs;
+}
+
+/** Fallback: merge consecutive pages of the same entity (OCR drift across page breaks). */
+function segmentBySimilarity(pageRecords: PageRecord[]): EntityAcc[] {
+  const accs: EntityAcc[] = [];
+  for (const record of pageRecords) {
+    const prev = accs[accs.length - 1];
+    if (
+      prev &&
+      record.page - prev.records[prev.records.length - 1].page <= 2 &&
+      similarity(prev.entityKey, record.entityKey) >= 0.8
+    ) {
+      if (record.entityName.length > prev.entityName.length) {
+        prev.entityName = record.entityName;
+        prev.entityKey = record.entityKey;
+      }
+      prev.records.push(record);
+      continue;
+    }
+    accs.push({
+      entityName: record.entityName,
+      entityKey: record.entityKey,
+      records: [record],
+    });
+  }
+  return accs;
+}
+
 const SPEC_WORD_RE = /^(فولت|فول|امبير|أمبير|لتر|مكعب|واط|وات|سم\b|بوصة|حصان|A|فاز|×)/i;
 
 /** Lines that continue a previous row (legal note / contact) — never a lot start. */
@@ -134,11 +252,13 @@ function readPage(record: { page: number; lines: string[] }): PageRecord | null 
 
 /**
  * Parser for الهيئة العامة للخدمات الحكومية auction brochures.
- * Structure-driven (ground truth = the pages themselves):
- * 1. Per detail page: entity header = lines between the date and the lot-table header.
- * 2. Consecutive pages with the same entity (OCR spelling drift, similarity >= 0.8) merge.
+ * Index-driven (الفهرس = مرجع تقسيم الجهات — user-verified counts):
+ * 1. Parse the فهرس pages: entries = (entity name, startPage, expectedLots).
+ * 2. Segment detail pages: entity i owns pages [start_i .. start_{i+1} - 1].
+ *    Entity names come from the page headers (richer than the index text).
  * 3. Main lots: rows starting with a plausible sequential number; other rows are
  *    sub-rows of the last main lot (spec lines, notes, quantities).
+ * Fallback: no usable فهرس → merge consecutive pages by name similarity (>= 0.8).
  */
 export function parseBrochureText(
   rawText: string,
@@ -166,32 +286,15 @@ export function parseBrochureText(
     if (read) pageRecords.push(read);
   }
 
-  // Merge consecutive pages of the same entity (OCR drift across page breaks).
-  interface EntityAcc {
-    entityName: string;
-    entityKey: string;
-    records: PageRecord[];
+  // ── Pass 1: فهرس-driven segmentation (ground truth for entity boundaries) ──
+  const indexEntries = parseIndexEntries(pages);
+  let accs: EntityAcc[] = [];
+  if (indexEntries.length >= 5) {
+    accs = segmentByIndex(indexEntries, pageRecords);
   }
-  const accs: EntityAcc[] = [];
-  for (const record of pageRecords) {
-    const prev = accs[accs.length - 1];
-    if (
-      prev &&
-      record.page - prev.records[prev.records.length - 1].page <= 2 &&
-      similarity(prev.entityKey, record.entityKey) >= 0.8
-    ) {
-      if (record.entityName.length > prev.entityName.length) {
-        prev.entityName = record.entityName;
-        prev.entityKey = record.entityKey;
-      }
-      prev.records.push(record);
-      continue;
-    }
-    accs.push({
-      entityName: record.entityName,
-      entityKey: record.entityKey,
-      records: [record],
-    });
+  // ── Fallback: no usable فهرس → similarity merge ──
+  if (accs.length === 0) {
+    accs = segmentBySimilarity(pageRecords);
   }
 
   const stamp = Date.now();
