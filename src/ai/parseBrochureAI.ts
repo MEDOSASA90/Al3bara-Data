@@ -8,12 +8,6 @@ const BROCHURE_SYSTEM =
   'بدون أي شرح أو markdown. حافظ على الأسماء العربية كما وردت تماماً. ' +
   'رقم اللوط lotNumber نص كما ورد، والكمية quantity نص كما وردت (مثال: "6.400 طن").';
 
-interface BrochureEntityChunk {
-  entityName: string;
-  location?: string;
-  lots: BrochureAIResult['entities'][number]['lots'];
-}
-
 /** Merge chunk results into one brochure result (dedupe entities by name). */
 function mergeChunkResults(chunkResults: BrochureAIResult[]): BrochureAIResult {
   if (chunkResults.length === 1) return chunkResults[0];

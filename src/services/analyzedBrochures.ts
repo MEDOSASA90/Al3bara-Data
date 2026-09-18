@@ -42,7 +42,7 @@ function requireRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('صيغة النتيجة غير متوقعة');
   }
-  return value;
+  return value as Record<string, unknown>;
 }
 
 function asText(record: Record<string, unknown>, key: string, fallback = ''): string {

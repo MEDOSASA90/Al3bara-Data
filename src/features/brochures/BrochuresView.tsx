@@ -50,8 +50,7 @@ export function BrochuresView(): ReactNode {
   const [items, setItems] = useState<AnalyzedBrochureSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [imported, setImported] = useState<BrochureData | null>(null);
+  const [imported, setImported] = useState<ImportedBrochure | null>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done'>('idle');
 
   useEffect(() => {
@@ -82,7 +81,6 @@ export function BrochuresView(): ReactNode {
     try {
       const analyzed = await fetchAnalyzedBrochure(file);
       setImported(analyzedToBrochureData(analyzed));
-      setModalOpen(true);
     } catch (err) {
       setError(`تعذر استيراد نتيجة التحليل: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`);
     } finally {
@@ -153,9 +151,7 @@ export function BrochuresView(): ReactNode {
                 <p className="text-sm font-black text-slate-900 dark:text-white">
                   📋 {item.title || item.file}
                 </p>
-                <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {item.entityName || '—'}
-                </p>
+
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-black">
                   <span className="rounded-lg bg-violet-100 px-2 py-1 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300">
                     {item.auctionDate || 'بدون تاريخ'}
