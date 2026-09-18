@@ -3,7 +3,7 @@
  * (التحليل بيحصل في n8n/الموبايل — التطبيق بيقرأ النتيجة النهائية فقط).
  */
 
-const RESULTS_BASE = import.meta.env.VITE_GCS_RESULTS_URL ?? 'http://143.246.43.27:8788';
+const RESULTS_BASE = import.meta.env.VITE_GCS_RESULTS_URL ?? '/gcs';
 
 export interface AnalyzedBrochureSummary {
   file: string;

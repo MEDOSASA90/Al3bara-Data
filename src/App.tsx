@@ -1552,9 +1552,22 @@ export default function App(): ReactNode {
   const navigate = useCallback((view: ViewMode): void => {
     setViewMode(view);
     window.history.pushState({ view }, '', `#${view}`);
+    // التنقل يودي لأول الصفحة (فوق) — مش مكان ما المستخدم واقف
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, []);
 
   const goHome = useCallback((): void => navigate('dashboard'), [navigate]);
+
+  // زر الرجوع في الموبايل: يرجع للصفحة اللي قبلها داخل التطبيق (hash) — مش يقفل التطبيق
+  useEffect(() => {
+    const onPopState = (): void => {
+      const view = viewFromHash();
+      setViewMode(view);
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const handleLogout = useCallback(async (): Promise<void> => {
     setViewMode('dashboard');

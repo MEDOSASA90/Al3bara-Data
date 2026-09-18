@@ -3,6 +3,19 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 
+
+// زر الرجوع في الموبايل: يرجع للصفحة اللي قبلها داخل التطبيق — مش يقفل التطبيق
+// نضيف تاريخ وهمي عند التحميل عشان زر الرجوع الأول يرجع للرئيسية
+window.history.pushState({ al3bara: 'root' }, '', window.location.href);
+window.addEventListener('popstate', (event) => {
+  // لو المستخدم ضغط زر الرجوع ووصل لبداية التاريخ — نرجعه للرئيسية ونضيف تاريخ جديد
+  // (التطبيق ميقفلش)
+  if (!event.state || !event.state.al3bara) {
+    window.history.pushState({ al3bara: 'root' }, '', window.location.href);
+  }
+  // التنقل الداخلي بيتم عبر hash — نسيبه للـ App
+});
+
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {

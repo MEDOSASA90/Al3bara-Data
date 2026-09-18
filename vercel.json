@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/gcs/:path*",
+      "destination": "http://143.246.43.27:8788/:path*"
+    },
+    {
+      "source": "/gcs",
+      "destination": "http://143.246.43.27:8788"
+    }
+  ]
+}

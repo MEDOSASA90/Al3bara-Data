@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ViewMode } from '../../domain/types';
 import { BrandMark } from './BrandLogo';
 
@@ -52,10 +52,15 @@ export function AppShell({
   children,
 }: AppShellProps): ReactNode {
   const current = activeId(view);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 right-0 z-40 hidden w-60 flex-col border-l border-slate-200/70 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 md:flex">
+      {/* Desktop sidebar — drawer: مخفي افتراضياً ويفتح بالدوس */}
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 flex w-60 flex-col border-l border-slate-200/70 bg-white/95 backdrop-blur shadow-2xl transition-transform duration-300 dark:border-slate-800 dark:bg-slate-900/95 ${
+          sidebarOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
         <button type="button" onClick={onHome} className="flex items-center gap-2 px-5 pb-4 pt-5 text-right">
           <BrandMark size={40} className="shrink-0" />
           <span className="min-w-0">
@@ -74,7 +79,10 @@ export function AppShell({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onNavigate(item.id)}
+                onClick={() => {
+                  onNavigate(item.id);
+                  setSidebarOpen(false);
+                }}
                 aria-current={isActive ? 'page' : undefined}
                 className={
                   isActive
@@ -101,8 +109,17 @@ export function AppShell({
         </div>
       </aside>
 
+      {/* Overlay — قفل السايد مين عند الدوس بره */}
+      {sidebarOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+
       {/* Content column */}
-      <div className="md:pr-60">
+      <div>
         {/* Slim top bar */}
         <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur dark:border-slate-800 dark:bg-slate-950/85">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-2.5">
@@ -118,6 +135,14 @@ export function AppShell({
               <h1 className="truncate text-base font-black text-slate-900 sm:text-lg dark:text-white">{title}</h1>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen((v) => !v)}
+                aria-label="القائمة"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-lg text-white shadow-soft"
+              >
+                ☰
+              </button>
               {aiSlot}
               <button
                 type="button"
