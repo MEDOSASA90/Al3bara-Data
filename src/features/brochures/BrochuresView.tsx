@@ -13,32 +13,33 @@ import {
 } from '../../services/analyzedBrochures';
 
 
-function analyzedToBrochureData(a: unknown): BrochureData {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const raw = a as any;
-  const entities = Array.isArray(raw?.entities)
-    ? raw.entities.map((e: Record<string, unknown>, i: number) => {
-        const lots = Array.isArray(e?.lots)
-          ? (e.lots as Record<string, unknown>[]).map((l, j) => ({
-              id: `lot-${i}-${j}`,
-              lotNumber: String(l?.lotNumber ?? j + 1),
-              name: String(l?.name ?? 'لوط'),
-              quantity: String(l?.quantity ?? '1 عدد'),
-              totalValue: Number(l?.totalValue ?? 0),
-              value30: Number(l?.value30 ?? 0),
-              value70: Number(l?.value70 ?? 0),
-              isArchived: false,
-            }))
-          : [];
-        return {
-          id: `entity-${i}`,
-          entityName: String(e?.entityName ?? e?.name ?? 'جهة'),
-          lots,
-        };
-      })
-    : [];
+interface ImportedBrochure {
+  id: string;
+  title: string;
+  auctionDate: string;
+  entities: { id: string; entityName: string; lots: { id: string; lotNumber: string; name: string; quantity: string; totalValue: number }[] }[];
+}
+
+function analyzedToBrochureData(a: unknown): ImportedBrochure {
+  const raw = a as Record<string, unknown> | null;
+  const rawEntities = Array.isArray(raw?.entities) ? (raw?.entities as Record<string, unknown>[]) : [];
+  const entities = rawEntities.map((e, i) => {
+    const rawLots = Array.isArray(e?.lots) ? (e.lots as Record<string, unknown>[]) : [];
+    const lots = rawLots.map((l, j) => ({
+      id: `lot-${i}-${j}`,
+      lotNumber: String(l?.lotNumber ?? j + 1),
+      name: String(l?.name ?? 'لوط'),
+      quantity: String(l?.quantity ?? '1 عدد'),
+      totalValue: Number(l?.totalValue ?? 0),
+    }));
+    return {
+      id: `entity-${i}`,
+      entityName: String(e?.entityName ?? e?.name ?? 'جهة'),
+      lots,
+    };
+  });
   return {
-    id: `analyzed-${raw?.file ?? Date.now()}`,
+    id: `analyzed-${String(raw?.file ?? Date.now())}`,
     title: String(raw?.title ?? 'كراسة محللة'),
     auctionDate: String(raw?.auctionDate ?? ''),
     entities,
