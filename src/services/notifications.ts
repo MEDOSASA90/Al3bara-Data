@@ -15,7 +15,8 @@ import {
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
+// VAPID key ثابت (من Firebase Console — Web Push certificates)
+const VAPID_KEY = "BE7JIolZ1hZP4a9CVZf7xhJDkr-wXksk4YcoC0fnDmwCltRl-ePAIykUNv7W25MKOJGORR9VYViw3IL6SstFzIQ";
 
 let messagingInstance: Messaging | null = null;
 
