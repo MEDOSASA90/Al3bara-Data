@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Modal } from '../../components/ui/Modal';
 import { normalizeArabic, SearchableDropdown } from '../../components/ui/SearchableDropdown';
-import { PRELOADED_AUCTIONS } from '../../data/preloadedAuctions';
 import type {
   AuctionBrochureData,
   ParsedLot,
@@ -117,9 +116,7 @@ export function AuctionBrochureModal({
   onAddRejectedLot,
   onDeleteRejectedLot,
 }: AuctionBrochureModalProps) {
-  const [selectedBrochureId, setSelectedBrochureId] = useState<string>(
-    PRELOADED_AUCTIONS[0]?.id ?? '',
-  );
+  const [selectedBrochureId, setSelectedBrochureId] = useState<string>('');
   const [customBrochure, setCustomBrochure] =
     useState<AuctionBrochureData | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
@@ -235,8 +232,8 @@ export function AuctionBrochureModal({
   }, [selectedBrochureId]);
 
   const allBrochures = useMemo<AuctionBrochureData[]>(() => {
-    if (customBrochure) return [customBrochure, ...systemBrochures, ...PRELOADED_AUCTIONS];
-    return [...systemBrochures, ...PRELOADED_AUCTIONS];
+    if (customBrochure) return [customBrochure, ...systemBrochures];
+    return systemBrochures;
   }, [customBrochure, systemBrochures]);
 
   const activeBrochure = useMemo<AuctionBrochureData | undefined>(() => {

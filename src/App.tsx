@@ -22,7 +22,6 @@ import {
 } from './components/print/reports';
 import { syncBuyerCommission } from './data/commissionSync';
 import { removePartnerCommission, syncPartnerCommission } from './data/partnerCommissionSync';
-import { PRELOADED_AUCTIONS } from './data/preloadedAuctions';
 import {
   appendEntityLots,
   archiveClient,
@@ -318,7 +317,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     });
   }, []);
 
-  /** All known sessions: saved library first, then upcoming preloaded ones. */
+  /** All known sessions: the saved library only (كراسات النظام المحللة + المرفوعة). */
   const alertSessions = useMemo<BrochureSessionRef[]>(() => {
     const saved = savedBrochures.map<BrochureSessionRef>((b) => ({
       id: b.id,
@@ -330,19 +329,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         lots: e.lots.map((l) => ({ lotNumber: l.lotNumber, name: l.name })),
       })),
     }));
-    const savedDates = new Set(saved.map((s) => s.auctionDate));
-    const upcoming = PRELOADED_AUCTIONS.filter((b) => !savedDates.has(b.auctionDate)).map<BrochureSessionRef>(
-      (b) => ({
-        id: b.id,
-        auctionDate: b.auctionDate,
-        title: b.title,
-        entities: b.entities.map((e) => ({
-          entityName: e.entityName,
-          lots: e.lots.map((l) => ({ lotNumber: l.lotNumber, name: l.name })),
-        })),
-      }),
-    );
-    return [...saved, ...upcoming];
+    return saved;
   }, [savedBrochures]);
 
   const [entitiesFilter, setEntitiesFilter] = useState<LotStatusFilter>('all');
