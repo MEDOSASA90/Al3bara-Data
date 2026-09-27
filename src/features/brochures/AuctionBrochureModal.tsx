@@ -8,6 +8,7 @@ import type {
 } from '../../data/preloadedAuctions';
 import { AUCTION_HALL_DEFAULT, AUCTION_INSURANCE_DEFAULT, STAMP_FEE_DEFAULT } from '../../domain/constants';
 import { analyzeBrochureText, analyzeBrochureImages } from '../../utils/brochureAnalyzer';
+import { listAnalyzedBrochures, fetchAnalyzedBrochure } from '../../services/analyzedBrochures';
 import type { BrochureAIResult } from '../../ai/schemas';
 import {
   applyQuantityChange,
@@ -142,11 +143,101 @@ export function AuctionBrochureModal({
   const [journalSearch, setJournalSearch] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** كراسات محللة من النظام المستقل (n8n/VPS) — تظهر في حقل الجلسة. */
+  const [systemBrochures, setSystemBrochures] = useState<AuctionBrochureData[]>([]);
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [systemLoadingId, setSystemLoadingId] = useState<string | null>(null);
+
+  /* تحميل قايمة الكراسات المحللة من النظام أول ما المودال يفتح. */
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    setSystemLoading(true);
+    listAnalyzedBrochures()
+      .then((list) => {
+        if (!alive) return;
+        const stamp = Date.now();
+        const converted: AuctionBrochureData[] = list.map((item, index) => ({
+          id: `system-${item.file}`,
+          auctionDate: item.auctionDate || '',
+          title: item.title || item.entityName || item.file,
+          hallLocation: AUCTION_HALL_DEFAULT,
+          insuranceAmount: AUCTION_INSURANCE_DEFAULT,
+          entities: [
+            {
+              id: `system-entity-${index + 1}-${stamp}`,
+              entityName: item.entityName || item.title || 'بضائع كراسة المزاد',
+              lots: [],
+            },
+          ],
+        }));
+        setSystemBrochures(converted);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSystemLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isOpen]);
+
+  /* اختيار كراسة من النظام → جلب نتيجتها الكاملة (اللوطات والجهات). */
+  useEffect(() => {
+    if (!selectedBrochureId.startsWith('system-')) return;
+    if (systemBrochures.find((b) => b.id === selectedBrochureId && b.entities[0].lots.length > 0)) return;
+    const file = selectedBrochureId.slice('system-'.length);
+    let alive = true;
+    setSystemLoadingId(selectedBrochureId);
+    fetchAnalyzedBrochure(file)
+      .then((analyzed) => {
+        if (!alive) return;
+        const stamp = Date.now();
+        const converted: AuctionBrochureData = {
+          id: `system-${file}`,
+          auctionDate: analyzed.auctionDate || '',
+          title: analyzed.title || file,
+          hallLocation: analyzed.location || AUCTION_HALL_DEFAULT,
+          insuranceAmount: AUCTION_INSURANCE_DEFAULT,
+          entities:
+            analyzed.entities.length > 0
+              ? analyzed.entities.map((entity, entityIndex) => ({
+                  id: `system-entity-${entityIndex + 1}-${stamp}`,
+                  entityName: entity.entityName,
+                  location: entity.location,
+                  lots: entity.lots.map((lot) => ({
+                    lotNumber: lot.lotNumber,
+                    name: lot.name,
+                    quantity: lot.quantity,
+                    unit: lot.unit ?? 'عدد',
+                    condition: lot.condition ?? 'خردة',
+                    notes: undefined,
+                  })),
+                }))
+              : [
+                  {
+                    id: `system-entity-1-${stamp}`,
+                    entityName: analyzed.entityName || 'بضائع كراسة المزاد',
+                    lots: [],
+                  },
+                ],
+        };
+        setSystemBrochures((prev) => [converted, ...prev.filter((b) => b.id !== converted.id)]);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSystemLoadingId(null);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrochureId]);
 
   const allBrochures = useMemo<AuctionBrochureData[]>(() => {
-    if (customBrochure) return [customBrochure, ...PRELOADED_AUCTIONS];
-    return PRELOADED_AUCTIONS;
-  }, [customBrochure]);
+    if (customBrochure) return [customBrochure, ...systemBrochures, ...PRELOADED_AUCTIONS];
+    return [...systemBrochures, ...PRELOADED_AUCTIONS];
+  }, [customBrochure, systemBrochures]);
 
   const activeBrochure = useMemo<AuctionBrochureData | undefined>(() => {
     return (
@@ -228,14 +319,16 @@ export function AuctionBrochureModal({
   const sessionDropdownItems = useMemo(() => {
     return allBrochures.map((b) => {
       const lotsCount = b.entities.reduce((sum, e) => sum + e.lots.length, 0);
+      const isSystem = b.id.startsWith('system-');
+      const isLoading = systemLoadingId === b.id;
       return {
         id: b.id,
-        label: `${b.title} — ${b.auctionDate}`,
-        sub: `${b.entities.length} جهة • ${lotsCount} لوط`,
+        label: `${isSystem ? '🛰️ ' : ''}${b.title} — ${b.auctionDate || 'بدون تاريخ'}${isLoading ? ' (⏳ جاري التحميل...)' : ''}`,
+        sub: `${b.entities.length} جهة • ${lotsCount} لوط${isSystem && lotsCount === 0 && !isLoading ? ' — اختارها لجلب اللوطات من النظام' : ''}`,
         keywords: b.entities.map((e) => e.entityName).join(' '),
       };
     });
-  }, [allBrochures]);
+  }, [allBrochures, systemLoadingId]);
 
   const entityDropdownItems = useMemo(() => {
     if (!activeBrochure) return [];
@@ -710,14 +803,14 @@ void aiResultTooSparse;
           ) : null}
           <div>
             <label className="mb-1 block text-xs font-black text-amber-300">
-              📅 الجلسة / الكراسة ({sessionDropdownItems.length}):
+              📅 الجلسة / الكراسة ({sessionDropdownItems.length}){systemLoading ? ' — ⏳ جاري جلب كراسات النظام...' : ' — كراسات النظام 🛰️ + المضمنة'}:
             </label>
             <SearchableDropdown
               items={sessionDropdownItems}
               valueId={selectedBrochureId || null}
               onChange={handleSelectBrochure}
               placeholder="🔍 ابحث عن جلسة بالتاريخ أو العنوان..."
-              emptyText="لا توجد جلسة مطابقة — جرّب كلمة أخرى"
+              emptyText={systemLoading ? '⏳ جاري جلب الكراسات من النظام...' : 'لا توجد جلسة مطابقة — جرّب كلمة أخرى'}
             />
           </div>
         </div>
