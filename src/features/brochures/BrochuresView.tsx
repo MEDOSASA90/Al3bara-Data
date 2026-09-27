@@ -5,6 +5,8 @@
  * - رفع كراسة PDF/DOCX → النظام يحللها والنتيجة تظهر
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { auth } from '../../config/firebase';
 import {
   listAnalyzedBrochures,
   fetchAnalyzedBrochure,
@@ -42,13 +44,29 @@ export function BrochuresView(): ReactNode {
   const [showPdf, setShowPdf] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done'>('idle');
   const [uploadMsg, setUploadMsg] = useState('');
+  /** Firebase uid — الكراسات المرفوعة بيه خاصة بيه (ترجع له هو بس). */
+  const [uid, setUid] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+      setUid(firebaseUser?.uid ?? '');
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let alive = true;
     const load = async (): Promise<void> => {
       try {
-        const list = await listAnalyzedBrochures();
-        if (alive) setItems(list);
+        // القايمة العامة + كراساتي الخاصة (لو مسجل) — في قايمة واحدة
+        const [publicList, mineList] = await Promise.all([
+          listAnalyzedBrochures(),
+          uid ? listAnalyzedBrochures(uid) : Promise.resolve([]),
+        ]);
+        if (!alive) return;
+        const mineFiles = new Set(mineList.map((m) => m.file));
+        const merged = [...mineList, ...publicList.filter((p) => !mineFiles.has(p.file))];
+        setItems(merged);
       } catch (err) {
         if (alive) setError(`تعذر جلب الكراسات المحللة: ${err instanceof Error ? err.message : 'خطأ غير معروف'}`);
       } finally {
@@ -61,7 +79,7 @@ export function BrochuresView(): ReactNode {
       alive = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [uid]);
 
   async function handleImport(file: string): Promise<void> {
     setImporting(file);
@@ -77,17 +95,24 @@ export function BrochuresView(): ReactNode {
   }
 
   async function handleUpload(file: File): Promise<void> {
+    if (uid === '') {
+      setError('لازم تسجل دخول الأول — الكراسة بتتحلل باسمك وترجع ليك بس');
+      return;
+    }
     setUploadState('uploading');
-    setUploadMsg(`⏳ جاري رفع ${file.name} — النظام يحللها بعد الرفع`);
+    setUploadMsg(`⏳ جاري رفع ${file.name} — النظام يحللها باسمك والنتيجة ترجع ليك بس`);
     setError('');
     try {
-      await uploadExternalBrochure(file);
+      await uploadExternalBrochure(file, uid);
       setUploadState('done');
-      setUploadMsg(`✅ ${file.name} اترفعت — النظام يحللها وتظهر في القايمة خلال دقايق`);
+      setUploadMsg(`✅ ${file.name} اترفعت — بتتحلل على النظام والنتيجة خاصة بيك (مش بتظهر لباقي المستخدمين)`);
       setLoading(true);
       window.setTimeout(() => {
-        listAnalyzedBrochures()
-          .then((list) => setItems(list))
+        Promise.all([listAnalyzedBrochures(), listAnalyzedBrochures(uid)])
+          .then(([publicList, mineList]) => {
+            const mineFiles = new Set(mineList.map((m) => m.file));
+            setItems([...mineList, ...publicList.filter((p) => !mineFiles.has(p.file))]);
+          })
           .catch(() => undefined)
           .finally(() => setLoading(false));
       }, 8000);
@@ -173,7 +198,7 @@ export function BrochuresView(): ReactNode {
                     </span>
                     {item.source === 'external-upload' ? (
                       <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                        رفع خارجي
+                        🔒 خاصة بيك
                       </span>
                     ) : null}
                   </div>

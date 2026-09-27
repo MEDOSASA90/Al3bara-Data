@@ -62,9 +62,10 @@ function asText(record: Record<string, unknown>, key: string, fallback = ''): st
   return typeof value === 'string' ? value : fallback;
 }
 
-/** قايمة كل الكراسات المحللة في النظام. */
-export async function listAnalyzedBrochures(): Promise<AnalyzedBrochureSummary[]> {
-  const response = await fetch(`${RESULTS_BASE}/list`, { method: 'GET' });
+/** قايمة الكراسات المحللة — ownerUid اختياري: الكراسات الخاصة بصاحبها تظهر ليه هو بس. */
+export async function listAnalyzedBrochures(ownerUid?: string): Promise<AnalyzedBrochureSummary[]> {
+  const url = ownerUid ? `${RESULTS_BASE}/list?owner=${encodeURIComponent(ownerUid)}` : `${RESULTS_BASE}/list`;
+  const response = await fetch(url, { method: 'GET' });
   if (!response.ok) {
     throw new Error(`تعذر جلب قايمة التحليلات (${response.status})`);
   }
@@ -200,16 +201,23 @@ export function brochurePdfUrl(fileName: string): string {
 }
 
 /**
- * رفع كراسة PDF/DOCX من التطبيق → النظام يحللها والنتيجة تظهر في القايمة.
+ * رفع كراسة PDF/DOCX من التطبيق → النظام يحللها والنتيجة ترجع لصاحبها بس.
+ * ownerUid (Firebase uid) إلزامي — الكراسة الخاصة بيه: مش بتظهر في القايمة العامة
+ * ولا لباقي التطبيقات، وبينزل له إشعار FCM خاص.
  * محتاج X-Write-Key (متخزن في VITE_GCS_WRITE_KEY وقت البناء).
  */
-export async function uploadExternalBrochure(file: File): Promise<{ ok: boolean; fileName: string }> {
+export async function uploadExternalBrochure(file: File, ownerUid: string): Promise<{ ok: boolean; fileName: string }> {
   const writeKey: string = import.meta.env.VITE_GCS_WRITE_KEY ?? '';
   if (writeKey === '') throw new Error('مشكلة إعداد: مفتاح الرفع مش موجود (VITE_GCS_WRITE_KEY)');
+  if (ownerUid.trim() === '') throw new Error('لازم تسجل دخول الأول — الكراسة بتتحلل باسمك');
   const safeName = file.name.replace(/[^\w.\u0600-\u06FF-]+/g, '_');
   const response = await fetch(`${RESULTS_BASE}/upload/${encodeURIComponent(safeName)}`, {
     method: 'POST',
-    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Write-Key': writeKey },
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Write-Key': writeKey,
+      'X-Owner-Uid': ownerUid,
+    },
     body: file,
   });
   if (!response.ok) {
