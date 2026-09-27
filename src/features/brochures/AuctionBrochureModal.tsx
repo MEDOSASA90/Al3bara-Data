@@ -8,7 +8,6 @@ import type {
 } from '../../data/preloadedAuctions';
 import { AUCTION_HALL_DEFAULT, AUCTION_INSURANCE_DEFAULT, STAMP_FEE_DEFAULT } from '../../domain/constants';
 import { analyzeBrochureText, analyzeBrochureImages } from '../../utils/brochureAnalyzer';
-import type { SaveBrochurePayload } from './BrochuresView';
 import type { BrochureAIResult } from '../../ai/schemas';
 import {
   applyQuantityChange,
@@ -58,7 +57,16 @@ export interface AuctionBrochureModalProps {
   onOpenPredefinedBuyerModal: () => void;
   onSaveAwardedEntity: (data: AwardedEntityPayload) => Promise<void>;
   /** Auto-saves the parsed brochure into the library (Firestores كراسات المحفوظة). */
-  onSaveBrochureToLibrary?: (data: SaveBrochurePayload) => Promise<void>;
+  onSaveBrochureToLibrary?: (data: {
+    auctionDate: string;
+    title: string;
+    hallLocation: string;
+    insuranceAmount: number;
+    source: SavedBrochure['source'];
+    fileName?: string;
+    sourceText?: string;
+    entities: SavedBrochure['entities'];
+  }) => Promise<void>;
   rejectedLots: RejectedLot[];
   onAddRejectedLot: (input: RejectedLotInput) => Promise<void>;
   onDeleteRejectedLot: (id: string) => Promise<void>;

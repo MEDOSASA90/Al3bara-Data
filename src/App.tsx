@@ -7,7 +7,7 @@ import type { SavedBrochure } from './domain/types';
 import type { BrochureSessionRef } from './domain/notifications';
 import { NotificationBell } from './features/notifications/NotificationBell';
 import { BrochuresView } from './features/brochures/BrochuresView';
-import { analyzeBrochureText } from './utils/brochureAnalyzer';
+import { NewBrochuresBanner } from './features/dashboard/NewBrochuresBanner';
 import { downloadBackup } from './utils/backup';
 import { NOTIFICATIONS_SEEN_KEY } from './domain/constants';
 import {
@@ -38,7 +38,6 @@ import {
   deleteEntity,
   deletePartnership,
   deleteRejectedLot,
-  deleteBrochure,
   restoreClient,
   revokeShareLink,
   setClientTransactions,
@@ -371,12 +370,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const [openPartnershipId, setOpenPartnershipId] = useState<string | null>(null);
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
   const [deletePartnershipId, setDeletePartnershipId] = useState<string | null>(null);
-  const [deleteBrochureId, setDeleteBrochureId] = useState<string | null>(null);
   /** AI assistant panel open state (opened via the drawer 🤖 item). */
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
-  /** Bulk brochure analysis state (library «حللهم كله» button). */
-  const [analyzingAllBrochures, setAnalyzingAllBrochures] = useState(false);
-  const [analyzeAllProgress, setAnalyzeAllProgress] = useState('');
   /** Brochure pre-loaded into the auction modal when opened from the library. */
   const [preloadedBrochure, setPreloadedBrochure] = useState<SavedBrochure | null>(null);
   const [deleteClientReq, setDeleteClientReq] = useState<{ kind: ClientType; id: string } | null>(null);
@@ -553,58 +548,6 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     },
     [user.uid],
   );
-
-  /**
-   * Bulk precision analysis: re-analyses every saved brochure that has no
-   * lots (their sourceText was kept for exactly this) and updates Firestore
-   * with the extracted entities. Runs from «حللهم كله مرة واحدة» in the library.
-   */
-  const handleAnalyzeAllBrochures = useCallback(async (): Promise<void> => {
-    const targets = savedBrochures.filter((b) => b.entities.length === 0 || b.entities.every((e) => e.lots.length === 0));
-    if (targets.length === 0) return;
-    setAnalyzingAllBrochures(true);
-    let analyzed = 0;
-    for (const brochure of targets) {
-      setAnalyzeAllProgress(`🧠 جاري تحليل: ${brochure.title}`);
-      if (!brochure.sourceText || brochure.sourceText.trim().length < 50) {
-        setAnalyzeAllProgress(`⚠️ ${brochure.title} — مفيش نص محفوظ (استوردها تاني من الـ PDF)`);
-        continue;
-      }
-      try {
-        const analysis = await analyzeBrochureText(brochure.sourceText, brochure.fileName ?? brochure.title);
-        if (analysis.result && analysis.result.entities.length > 0) {
-          await saveBrochure({
-            auctionDate: brochure.auctionDate,
-            title: brochure.title,
-            hallLocation: brochure.hallLocation,
-            insuranceAmount: brochure.insuranceAmount,
-            source: 'ai',
-            fileName: brochure.fileName,
-            sourceText: brochure.sourceText,
-            userId: brochure.userId,
-            entities: analysis.result.entities.map((entity) => ({
-              entityName: entity.entityName,
-              ...(entity.location ? { location: entity.location } : {}),
-              lots: entity.lots.map((lot) => ({
-                lotNumber: lot.lotNumber,
-                name: lot.name,
-                quantity: lot.quantity,
-                ...(lot.unit ? { unit: lot.unit } : {}),
-                ...(lot.condition ? { condition: lot.condition } : {}),
-              })),
-            })),
-          });
-          analyzed += 1;
-          const lotsTotal = analysis.result.entities.reduce((s, e) => s + e.lots.length, 0);
-          setAnalyzeAllProgress(`✅ ${brochure.title} — ${lotsTotal} لوط`);
-        }
-      } catch {
-        setAnalyzeAllProgress(`⚠️ ${brochure.title} — تعذر التحليل`);
-      }
-    }
-    setAnalyzeAllProgress(`✅ اتحللت ${analyzed} من ${targets.length} كراسة`);
-    setAnalyzingAllBrochures(false);
-  }, [savedBrochures]);
 
   const handleSaveLot = useCallback(async (data: LotFormData): Promise<void> => {
     const entity = entities.find((e) => e.id === lotModal.entityId);
@@ -1315,6 +1258,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       case 'dashboard':
         return (
           <div className="space-y-4">
+            <NewBrochuresBanner />
             <InsightsCards snapshot={businessSnapshot} />
             <DashboardView
               entities={entities}
@@ -1329,30 +1273,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
           </div>
         );
       case 'brochures':
-        return (
-          <BrochuresView
-            brochures={savedBrochures}
-            onOpenInAuction={(brochure) => {
-              setPreloadedBrochure(brochure);
-              setBrochureOpen(true);
-            }}
-            onDelete={(id) => {
-              if (deleteBrochureId === id) {
-                void deleteBrochure(id);
-                setDeleteBrochureId(null);
-              } else {
-                setDeleteBrochureId(id);
-              }
-            }}
-            onOpenAuctionModal={() => {
-              setPreloadedBrochure(null);
-              setBrochureOpen(true);
-            }}
-            onAnalyzeAll={() => void handleAnalyzeAllBrochures()}
-            isAnalyzingAll={analyzingAllBrochures}
-            analyzeAllProgress={analyzeAllProgress}
-          />
-        );
+        return <BrochuresView />;
       case 'entities':
         return (
           <div className="space-y-4">
