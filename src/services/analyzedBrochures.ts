@@ -92,7 +92,7 @@ export async function listAnalyzedBrochures(ownerUid?: string): Promise<Analyzed
     .filter((item): item is AnalyzedBrochureSummary => item !== null && item.file !== '');
 }
 
-/** نتيجة تحليل كراسة واحدة (لوطات + جهات) — صيغة worker: booklet/entityName/lots flat. */
+/** نتيجة تحليل كراسة واحدة (لوطات + جهات) — fileName هو اسم الملف المطلوب (النتيجة مش بترجعه دايمًا). */
 export async function fetchAnalyzedBrochure(fileName: string): Promise<AnalyzedBrochure> {
   const response = await fetch(`${RESULTS_BASE}/file/${encodeURIComponent(fileName)}`, { method: 'GET' });
   if (!response.ok) {
@@ -172,6 +172,7 @@ export async function fetchAnalyzedBrochure(fileName: string): Promise<AnalyzedB
   }
 
   const analyzed: AnalyzedBrochure = {
+    file: fileName,
     auctionDate: asText(record, 'auctionDate'),
     title: asText(record, 'title') || (asText(record, 'entityName') !== '' ? `كراسة ${asText(record, 'entityName')}` : 'كراسة محللة (ن8ن)'),
     entities,
