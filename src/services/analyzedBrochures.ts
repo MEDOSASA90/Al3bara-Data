@@ -196,9 +196,10 @@ export async function fetchAnalyzedBrochure(fileName: string): Promise<AnalyzedB
   return analyzed;
 }
 
-/** رابط ملف الكراسة الأصلي (PDF/DOCX) — كراسة الشروط جنب التحليل. */
-export function brochurePdfUrl(fileName: string): string {
-  return `${RESULTS_BASE}/pdf/${encodeURIComponent(fileName)}`;
+/** رابط ملف الكراسة الأصلي (PDF/DOCX) — كراسة الشروط جنب التحليل. dl=1 → تحميل بدل عرض. */
+export function brochurePdfUrl(fileName: string, dl = false): string {
+  const base = `${RESULTS_BASE}/pdf/${encodeURIComponent(fileName)}`;
+  return dl ? `${base}?dl=1` : base;
 }
 
 /**

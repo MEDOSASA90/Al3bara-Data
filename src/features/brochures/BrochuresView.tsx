@@ -217,13 +217,22 @@ export function BrochuresView(): ReactNode {
                     {isImporting ? '⏳...' : isOpen ? 'إخفاء اللوطات ▲' : '📦 عرض اللوطات والجهات'}
                   </button>
                   {hasPdf ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowPdf(showPdf === item.file ? null : item.file)}
-                      className="min-h-[36px] cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                    >
-                      {showPdf === item.file ? 'إغلاق الكراسة ✕' : '📄 كراسة الشروط'}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowPdf(showPdf === item.file ? null : item.file)}
+                        className="min-h-[36px] cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                      >
+                        {showPdf === item.file ? 'إغلاق الكراسة ✕' : '📄 عرض كراسة الشروط'}
+                      </button>
+                      <a
+                        href={brochurePdfUrl(item.sourcePdf, true)}
+                        download={item.sourcePdf}
+                        className="flex min-h-[36px] items-center rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-3 py-1.5 text-[11px] font-black text-white transition hover:scale-[1.02]"
+                      >
+                        ⬇️ تحميل كراسة الشروط
+                      </a>
+                    </>
                   ) : null}
                 </div>
 
