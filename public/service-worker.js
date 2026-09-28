@@ -1,4 +1,4 @@
-const CACHE_NAME = 'al3bara-v4';
+const CACHE_NAME = 'al3bara-v5';
 const urlsToCache = [
   '/favicon.png',
   '/icon-192x192.png',
@@ -21,6 +21,13 @@ self.addEventListener('install', (event) => {
       .catch(() => undefined)
   );
   self.skipWaiting();
+});
+
+// رسالة SKIP_WAITING من الصفحة → فعّل التحديث فورًا
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activate: clean up ALL old caches so updates land immediately.

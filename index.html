@@ -107,7 +107,7 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Service Worker Registration -->
+    <!-- Service Worker Registration + قسري تحديث: لو SW جديد → reload مرة واحدة -->
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -115,10 +115,34 @@
             .register('/service-worker.js')
             .then((registration) => {
               console.log('Service Worker registered successfully:', registration.scope);
+              // لو فيه SW جديد في انتظار (update) — فعّله فورًا واعمل reload
+              if (registration.waiting) {
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (!newWorker) return;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'activated' && !navigator.serviceWorker.controller) return;
+                  if (newWorker.state === 'activated') {
+                    if (sessionStorage.getItem('sw_reloaded') !== '1') {
+                      sessionStorage.setItem('sw_reloaded', '1');
+                      window.location.reload();
+                    }
+                  }
+                });
+              });
             })
             .catch((error) => {
               console.log('Service Worker registration failed:', error);
             });
+          // لو SW بيتحكم في الصفحة ودخل تحديث جديد — reload مرة واحدة
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (sessionStorage.getItem('sw_reloaded') !== '1') {
+              sessionStorage.setItem('sw_reloaded', '1');
+              window.location.reload();
+            }
+          });
         });
       }
     </script>
