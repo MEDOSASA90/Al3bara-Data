@@ -1,6 +1,6 @@
 /* Firebase Cloud Messaging service worker.
  * Handles background push notifications when the app is closed.
- * The VAPID key is public (safe to expose) and injected at build time.
+ * Firebase config (public — safe to expose in client code).
  */
 
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
@@ -8,12 +8,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-com
 
 /* eslint-disable no-undef */
 firebase.initializeApp({
-  apiKey: self.FIREBASE_CONFIG?.apiKey,
-  authDomain: self.FIREBASE_CONFIG?.authDomain,
-  projectId: self.FIREBASE_CONFIG?.projectId,
-  storageBucket: self.FIREBASE_CONFIG?.storageBucket,
-  messagingSenderId: self.FIREBASE_CONFIG?.messagingSenderId,
-  appId: self.FIREBASE_CONFIG?.appId,
+  apiKey: 'AIzaSyDgMxJjb_ENhCgpmn1l02AwhWzDkGAxAa0',
+  authDomain: 'al3bara-data-b1abe.firebaseapp.com',
+  projectId: 'al3bara-data-b1abe',
+  storageBucket: 'al3bara-data-b1abe.appspot.com',
+  messagingSenderId: '87091757430',
+  appId: '1:87091757430:web:edcede33053c79f239ba57',
 });
 
 try {
