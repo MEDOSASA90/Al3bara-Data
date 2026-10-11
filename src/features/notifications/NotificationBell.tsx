@@ -31,6 +31,23 @@ export function NotificationBell({ alertsInput, seen, onMarkSeen, onNavigate, us
 
   const alerts = useMemo(() => buildAlerts(alertsInput), [alertsInput]);
   const unseenCount = alerts.filter((a) => !seen.includes(a.id)).length;
+  const [regState, setRegState] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [regMsg, setRegMsg] = useState('');
+
+  /* Keep the FCM token fresh: re-register on every open while permission is granted
+   * so the server always holds a live token for background push. */
+  useEffect(() => {
+    if (permission !== 'granted' || !userId) return;
+    let cancelled = false;
+    void enableFcmPush(userId).then((result) => {
+      if (cancelled) return;
+      setRegState(result.ok ? 'ok' : 'fail');
+      setRegMsg(result.ok ? '' : (result.error ?? 'تعذر تسجيل الإشعارات'));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [permission, userId]);
 
   /* Push unseen alerts as phone notifications whenever they change. */
   useEffect(() => {
@@ -103,6 +120,21 @@ export function NotificationBell({ alertsInput, seen, onMarkSeen, onNavigate, us
                   هتوصلك المواعيد والكراسات الجديدة واللوطات المرفوضة حتى والتطبيق مقفول
                 </p>
               </button>
+            ) : null}
+
+            {permission === 'granted' && regState === 'fail' ? (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-800 dark:bg-amber-950/40">
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  ⚠️ تسجيل الإشعارات للسيرفر فشل: {regMsg}
+                </p>
+              </div>
+            ) : null}
+            {permission === 'granted' && regState === 'ok' ? (
+              <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-2 dark:border-emerald-800 dark:bg-emerald-950/30">
+                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                  ✅ الإشعارات مسجلة على السيرفر — هتيجي حتى والتطبيق مقفول
+                </p>
+              </div>
             ) : null}
 
             <div className="max-h-[60vh] overflow-y-auto">

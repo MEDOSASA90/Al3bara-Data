@@ -1,4 +1,4 @@
-const CACHE_NAME = 'al3bara-v6';
+const CACHE_NAME = 'al3bara-v7';
 const urlsToCache = [
   '/favicon.png',
   '/icon-192x192.png',
