@@ -289,12 +289,12 @@ export function BrochuresView(): ReactNode {
                             {entity.lots.map((lot) => (
                               <li
                                 key={`${entity.entityName}-${lot.lotNumber}-${lot.name}`}
-                                className="flex items-start justify-between gap-2 rounded-lg bg-white px-3 py-1.5 text-[11px] dark:bg-slate-900/60"
+                                className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1 rounded-lg bg-white px-3 py-1.5 text-[11px] dark:bg-slate-900/60"
                               >
-                                <span className="min-w-0 flex-1 break-words font-bold text-slate-700 dark:text-slate-200">
+                                <span className="min-w-[55%] flex-1 break-words font-bold leading-5 text-slate-700 dark:text-slate-200">
                                   <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">لوط {lot.lotNumber}:</span> {lot.name}
                                 </span>
-                                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-bold whitespace-nowrap text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                <span className="max-w-[45%] rounded bg-slate-100 px-1.5 py-0.5 font-bold leading-5 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                                   {lot.quantity}{lot.unit ? ` ${lot.unit}` : ''}
                                   {lot.condition ? ` • ${lot.condition}` : ''}
                                 </span>
