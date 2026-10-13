@@ -8,6 +8,19 @@ import {
   getDirectImageUrl,
 } from '../../utils/format';
 
+
+/** HTML-escapes user-provided text before it lands in a print document. */
+function esc(value: string | null | undefined): string {
+  if (!value) return '';
+  const AMP = String.fromCharCode(38);
+  return value
+    .replace(/&/g, AMP + 'amp;')
+    .replace(/</g, AMP + 'lt;')
+    .replace(/>/g, AMP + 'gt;')
+    .replace(/"/g, AMP + 'quot;')
+    .replace(/'/g, AMP + '#39;');
+}
+
 /** Archived lot row: the lot plus the owning entity's display info. */
 export interface ArchivedLotEntry {
   lot: Lot;
@@ -23,7 +36,7 @@ function shell(title: string, body: string): string {
 <html dir="rtl" lang="ar">
 <head>
 <meta charset="UTF-8">
-<title>${title}</title>
+<title>${esc(title)}</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
@@ -99,14 +112,14 @@ function lotRow(lot: Lot): string {
   const paid = lot.is70Paid
     ? `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 text-green-700">تم السداد</span>${
         lot.paymentDetails?.payerName
-          ? `<div class="text-xs text-slate-500 mt-1">بواسطة: ${lot.paymentDetails.payerName}</div>`
+          ? `<div class="text-xs text-slate-500 mt-1">بواسطة: ${esc(lot.paymentDetails.payerName)}</div>`
           : ''
       }`
     : `<span class="inline-block px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">لم يتم السداد</span>`;
   return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-<td class="p-4 text-slate-800 font-bold text-base">${lot.lotNumber}</td>
-<td class="p-4 text-slate-700 font-medium">${lot.name}</td>
-<td class="p-4 text-slate-600 font-semibold text-base">${lot.quantity || '-'}</td>
+<td class="p-4 text-slate-800 font-bold text-base">${esc(lot.lotNumber)}</td>
+<td class="p-4 text-slate-700 font-medium">${esc(lot.name)}</td>
+<td class="p-4 text-slate-600 font-semibold text-base">${esc(lot.quantity) || '-'}</td>
 <td class="p-4 font-black text-blue-700 text-lg" dir="ltr">${formatCurrency(lot.totalValue)}</td>
 <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(lot.value30)}</td>
 <td class="p-4 font-black text-orange-700 text-lg" dir="ltr">${formatCurrency(lot.value70)}</td>
@@ -136,8 +149,8 @@ function contractImages(lots: Lot[]): string {
     .map(
       (lot) => `<div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm break-inside-avoid">
 <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
-<img src="${getDirectImageUrl(lot.contractImage!.url)}" alt="عقد ${lot.name}" class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity" onerror="this.style.display='none'" referrerpolicy="no-referrer" onclick="openImageModal(this.src, 'عقد ${lot.name}')" />
-</div><p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${lot.lotNumber} - ${lot.name}</p></div>`,
+<img src="${getDirectImageUrl(lot.contractImage!.url)}" alt="عقد ${esc(lot.name)}" class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity" onerror="this.style.display='none'" referrerpolicy="no-referrer" onclick="openImageModal(this.src, 'عقد ${esc(lot.name)}')" />
+</div><p class="text-center text-xs text-slate-500 mt-2 font-semibold">لوط ${esc(lot.lotNumber)} - ${esc(lot.name)}</p></div>`,
     )
     .join('')}</div></div>`;
 }
@@ -161,8 +174,8 @@ function entityBlock(entity: Entity): string {
   return `<div class="mb-8 break-inside-avoid">
 <div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-xl p-4 text-white">
 <div class="flex justify-between items-start"><div class="flex-1">
-<h3 class="text-2xl font-black mb-2">${entity.name}</h3>
-${entity.buyerName ? `<p class="text-base text-white/90 mb-2">المشتري: ${entity.buyerName}</p>` : ''}
+<h3 class="text-2xl font-black mb-2">${esc(entity.name)}</h3>
+${entity.buyerName ? `<p class="text-base text-white/90 mb-2">المشتري: ${esc(entity.buyerName)}</p>` : ''}
 <div class="flex flex-col gap-1">
 <p class="text-sm text-white/80">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
 ${deadlineLine(entity, active)}</div></div>
@@ -208,7 +221,7 @@ export function transactionHtml(
 <tbody class="divide-y divide-slate-100">${items
         .map(
           (item) => `<tr class="hover:bg-slate-50/50 transition-colors">
-<td class="p-4 text-slate-700 font-medium">${item.name}</td>
+<td class="p-4 text-slate-700 font-medium">${esc(item.name)}</td>
 <td class="p-4 text-slate-600 font-mono text-sm">${item.quantity}</td>
 <td class="p-4 text-slate-600 font-mono text-sm">${formatCurrency(item.pricePerKilo)}</td>
 <td class="p-4 text-slate-900 font-bold text-center font-mono text-sm bg-slate-50/30">${formatCurrency((item.quantity || 0) * (item.pricePerKilo || 0))}</td></tr>`,
@@ -220,7 +233,7 @@ export function transactionHtml(
     ? `<section class="mb-10 bg-amber-50 p-5 rounded-xl border border-amber-100 flex gap-4 items-start">
 <span class="text-2xl">📝</span><div>
 <h3 class="text-sm font-bold text-amber-800 mb-1">ملاحظات</h3>
-<p class="text-amber-900 text-sm leading-relaxed">${tx.notes}</p></div></section>`
+<p class="text-amber-900 text-sm leading-relaxed">${esc(tx.notes)}</p></div></section>`
     : '';
 
   const itemImages = items.filter((i) => i.image && i.image.url);
@@ -233,8 +246,8 @@ export function transactionHtml(
         .map(
           (item) => `<div class="border border-slate-200 rounded-xl p-2 bg-white shadow-sm break-inside-avoid">
 <div class="aspect-w-4 aspect-h-3 rounded-lg overflow-hidden bg-slate-100">
-<img src="${getDirectImageUrl(item.image!.url)}" alt="${item.name}" class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity" onerror="this.style.display='none'" referrerpolicy="no-referrer" onclick="openImageModal(this.src, '${item.name}')" />
-</div><p class="text-center text-xs text-slate-500 mt-2 font-semibold">${item.name}</p></div>`,
+<img src="${getDirectImageUrl(item.image!.url)}" alt="${esc(item.name)}" class="w-full h-32 object-cover cursor-pointer hover:opacity-80 transition-opacity" onerror="this.style.display='none'" referrerpolicy="no-referrer" onclick="openImageModal(this.src, '${esc(item.name)}')" />
+</div><p class="text-center text-xs text-slate-500 mt-2 font-semibold">${esc(item.name)}</p></div>`,
         )
         .join('')}</div></section>`
       : '';
@@ -254,8 +267,8 @@ ${header('كشف حساب حركة', exportDate)}
 <div class="grid grid-cols-2 gap-8 mb-10">
 <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100">
 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">العميل</h3>
-<p class="text-2xl font-bold text-slate-800">${client.name}</p>
-${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${formatPhones(client.phone)}</p>` : ''}</div>
+<p class="text-2xl font-bold text-slate-800">${esc(client.name)}</p>
+${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${esc(formatPhones(client.phone))}</p>` : ''}</div>
 <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100">
 <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2">تفاصيل الحركة</h3>
 <div class="flex flex-col gap-1">
@@ -279,7 +292,7 @@ export function clientSummaryHtml(client: Client, exportDate: string): string {
       (t) => `<tr class="hover:bg-slate-50/50 transition-colors">
 <td class="p-4 text-slate-700 font-medium whitespace-nowrap">${formatDate(t.date)}</td>
 <td class="p-4 text-slate-600"><span class="inline-block px-2 py-1 rounded text-xs font-medium ${t.amount > 0 ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'} mb-1">${t.amount > 0 ? 'مشتريات' : 'سداد'}</span>
-<div class="text-sm">${t.notes || (t.amount > 0 ? 'حركة مشتريات' : 'دفعة سداد')}</div></td>
+<div class="text-sm">${esc(t.notes) || (t.amount > 0 ? 'حركة مشتريات' : 'دفعة سداد')}</div></td>
 <td class="p-4 text-center font-bold text-slate-800 font-mono text-sm">${t.amount > 0 ? formatCurrency(t.amount) : '<span class="text-slate-300">-</span>'}</td>
 <td class="p-4 text-center font-bold text-green-600 font-mono text-sm">${t.amount < 0 ? formatCurrency(Math.abs(t.amount)) : '<span class="text-slate-300">-</span>'}</td></tr>`,
     )
@@ -298,7 +311,7 @@ export function clientSummaryHtml(client: Client, exportDate: string): string {
       if (item.image && item.image.url) {
         allImages.push({
           url: item.image.url,
-          label: `صنف - ${item.name}`,
+          label: `صنف - ${esc(item.name)}`,
           sublabel: formatDate(t.date),
         });
       }
@@ -325,8 +338,8 @@ ${header('ملخص حساب عميل', exportDate)}
 <section class="mb-10 bg-gradient-to-br from-slate-50 to-white p-8 rounded-2xl border border-slate-100 shadow-sm">
 <div class="flex items-center gap-4"><div class="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center text-3xl">👤</div>
 <div><h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">بيانات العميل</h2>
-<p class="text-3xl font-black text-slate-800">${client.name}</p>
-${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${formatPhones(client.phone)}</p>` : ''}</div></div></section>
+<p class="text-3xl font-black text-slate-800">${esc(client.name)}</p>
+${client.phone ? `<p class="text-sm text-slate-500 mt-2">📞 ${esc(formatPhones(client.phone))}</p>` : ''}</div></div></section>
 <section class="mb-10 flex-grow"><div class="flex items-center gap-2 mb-4">
 <div class="w-1 h-6 bg-blue-600 rounded-full"></div>
 <h3 class="text-lg font-bold text-slate-800">كشف الحركات</h3></div>
@@ -388,7 +401,7 @@ export function entitiesSummaryHtml(entities: Entity[], exportDate: string): str
         .map(
           (shipper, i) => `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
 <td class="p-4 text-slate-800 font-bold text-base">${i + 1}</td>
-<td class="p-4 text-slate-700 font-medium text-lg">${shipper.name}</td>
+<td class="p-4 text-slate-700 font-medium text-lg">${esc(shipper.name)}</td>
 <td class="p-4 font-black text-purple-700 text-lg" dir="ltr">${formatCurrency(shipper.initialBalance)}</td>
 <td class="p-4 text-center font-bold text-blue-700 text-lg">${shipper.lotsCount}</td></tr>`,
         )
@@ -423,8 +436,8 @@ export function singleEntityHtml(entity: Entity, exportDate: string): string {
 ${header('تقرير جهة', exportDate)}
 <section class="mb-8"><div class="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-6 text-white shadow-xl">
 <div class="flex justify-between items-start"><div class="flex-1">
-<h2 class="text-3xl font-black mb-2">${entity.name}</h2>
-${entity.buyerName ? `<p class="text-lg text-white/90 mb-2">المشتري: ${entity.buyerName}</p>` : ''}
+<h2 class="text-3xl font-black mb-2">${esc(entity.name)}</h2>
+${entity.buyerName ? `<p class="text-lg text-white/90 mb-2">المشتري: ${esc(entity.buyerName)}</p>` : ''}
 <div class="flex flex-col gap-1">
 <p class="text-sm text-white/80">ميعاد الجلسة: ${formatSpecificDateTime(entity.auctionDate)}</p>
 ${deadlineLine(entity, active)}</div></div>
@@ -497,8 +510,8 @@ ${withActive
     const v70 = active.reduce((s, l) => s + (l.value70 || 0), 0);
     return `<div class="border border-slate-200 rounded-2xl p-5 break-inside-avoid shadow-sm bg-white">
 <div class="bg-slate-100 p-4 rounded-xl mb-4">
-<h4 class="text-md font-black text-slate-800">${entity.name}</h4>
-${entity.buyerName ? `<p class="text-xs text-slate-500 mt-1 font-bold">المشتري: ${entity.buyerName}</p>` : ''}</div>
+<h4 class="text-md font-black text-slate-800">${esc(entity.name)}</h4>
+${entity.buyerName ? `<p class="text-xs text-slate-500 mt-1 font-bold">المشتري: ${esc(entity.buyerName)}</p>` : ''}</div>
 <table class="w-full text-right text-xs mb-4"><thead>
 <tr class="bg-slate-50 text-slate-500 border-b border-slate-200">
 <th class="p-2.5 font-bold">رقم اللوط</th>
@@ -511,13 +524,13 @@ ${entity.buyerName ? `<p class="text-xs text-slate-500 mt-1 font-bold">المش�
 <tbody class="divide-y divide-slate-100">${sortLotsByNumber(active)
       .map(
         (lot) => `<tr class="hover:bg-slate-50/20">
-<td class="p-2.5 text-slate-800 font-bold">${lot.lotNumber}</td>
-<td class="p-2.5 font-medium">${lot.name}</td>
-<td class="p-2.5 font-mono" dir="ltr">${lot.quantity || '-'}</td>
+<td class="p-2.5 text-slate-800 font-bold">${esc(lot.lotNumber)}</td>
+<td class="p-2.5 font-medium">${esc(lot.name)}</td>
+<td class="p-2.5 font-mono" dir="ltr">${esc(lot.quantity) || '-'}</td>
 <td class="p-2.5 text-slate-900 font-black font-mono" dir="ltr">${formatCurrency(lot.totalValue)}</td>
 <td class="p-2.5 text-indigo-700 font-black font-mono" dir="ltr">${formatCurrency(lot.value30)}</td>
 <td class="p-2.5 text-amber-700 font-black font-mono" dir="ltr">${formatCurrency(lot.value70)}</td>
-<td class="p-2.5 text-center">${lot.is70Paid ? `<span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">مسدد</span>${lot.paymentDetails?.payerName ? `<div class="text-[9px] text-slate-400 mt-0.5">بواسطة: ${lot.paymentDetails.payerName}</div>` : ''}` : `<span class="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full border border-rose-100">غير مسدد</span>`}</td></tr>`,
+<td class="p-2.5 text-center">${lot.is70Paid ? `<span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">مسدد</span>${lot.paymentDetails?.payerName ? `<div class="text-[9px] text-slate-400 mt-0.5">بواسطة: ${esc(lot.paymentDetails.payerName)}</div>` : ''}` : `<span class="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full border border-rose-100">غير مسدد</span>`}</td></tr>`,
       )
       .join('')}</tbody></table>
 <div class="grid grid-cols-3 gap-3 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-150">
@@ -557,8 +570,8 @@ ${header('ملخص الحسابات', exportDate)}
 <tbody>${balances
     .map(
       ({ client, balance, last }) => `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-<td class="p-4"><div class="text-slate-800 font-bold">${client.name}</div>
-${client.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${formatPhones(client.phone)}</div>` : ''}</td>
+<td class="p-4"><div class="text-slate-800 font-bold">${esc(client.name)}</div>
+${client.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${esc(formatPhones(client.phone))}</div>` : ''}</td>
 <td class="p-4 text-slate-600 text-sm">${last ? formatDate(last.date) : '-'}</td>
 <td class="p-4 text-center font-bold font-mono text-sm ${balance >= 0 ? 'text-red-600' : 'text-green-600'}">${formatCurrency(Math.abs(balance))} ${balance >= 0 ? '(مدين)' : '(دائن)'}</td></tr>`,
     )
@@ -583,7 +596,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
     .map((id) => {
       const due = s.dues[id] ?? 0;
       if (Math.abs(due) < 0.01) return null;
-      return due > 0 ? `مستحق لـ ${partyName(id)}: ${formatCurrency(due)}` : `مستحق على ${partyName(id)}: ${formatCurrency(Math.abs(due))}`;
+      return due > 0 ? `مستحق لـ ${esc(partyName(id))}: ${formatCurrency(due)}` : `مستحق على ${esc(partyName(id))}: ${formatCurrency(Math.abs(due))}`;
     })
     .filter((line): line is string => line !== null);
   const dueLine =
@@ -620,7 +633,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
               .join('')}</div>`
           : '';
       return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-<td class="p-4 text-slate-800 font-bold">${item.name}${item.notes ? `<div class="text-xs text-slate-500 mt-1">${item.notes}</div>` : ''}${breakdown}</td>
+<td class="p-4 text-slate-800 font-bold">${esc(item.name)}${item.notes ? `<div class="text-xs text-slate-500 mt-1">${esc(item.notes)}</div>` : ''}${breakdown}</td>
 <td class="p-4 text-center text-sm font-bold">${modeLabel(item.mode)}</td>
 <td class="p-4 text-slate-600 font-mono" dir="ltr">${itemQuantity(item)}</td>
 <td class="p-4 font-bold font-mono" dir="ltr">${formatCurrency(itemBuyCost(item))}</td>
@@ -634,7 +647,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
 <td class="p-4 text-slate-600 whitespace-nowrap">${formatDate(tx.date)}</td>
 <td class="p-4 text-slate-700 font-bold text-sm">${kindLabel(tx.kind)}</td>
 <td class="p-4 text-slate-600 text-sm">${payerLabel(tx.paidBy)}${tx.deliveredBy ? ` (سلّمها ${payerLabel(tx.deliveredBy)})` : ''}${tx.kind === 'reimbursement' && tx.reimburseTo ? ` → ${payerLabel(tx.reimburseTo)}` : ''}</td>
-<td class="p-4 text-slate-600 text-sm">${tx.notes || '-'}</td>
+<td class="p-4 text-slate-600 text-sm">${esc(tx.notes) || '-'}</td>
 <td class="p-4 font-black font-mono" dir="ltr">${formatCurrency(tx.amount)}</td></tr>`,
     )
     .join('');
@@ -644,7 +657,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
       (pay) => `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
 <td class="p-4 text-slate-600 whitespace-nowrap">${formatDate(pay.date)}</td>
 <td class="p-4 text-slate-600 text-sm">${payerLabel(pay.paidBy)}${pay.deliveredBy ? ` (سلّمها ${payerLabel(pay.deliveredBy)})` : ''}</td>
-<td class="p-4 text-slate-600 text-sm">${pay.notes || '-'}</td>
+<td class="p-4 text-slate-600 text-sm">${esc(pay.notes) || '-'}</td>
 <td class="p-4 font-black font-mono" dir="ltr">${formatCurrency(pay.amount)}</td></tr>`,
     )
     .join('');
@@ -662,14 +675,14 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
       const remaining = (sale.totalAmount || 0) - paid;
       const status = remaining <= 0.009 ? 'خالص' : paid > 0.009 ? 'جزئي' : sale.isAdvance === true ? 'عربون' : 'آجل';
       const lines = (sale.lines ?? [])
-        .map((line) => `<div class="text-[11px] text-slate-500">• ${line.name} • <span dir="ltr">${line.quantity ?? 0}${line.unit ? ` ${line.unit}` : ''} × ${formatCurrency(line.unitPrice ?? 0)}</span> = <span dir="ltr" class="font-bold">${formatCurrency(line.total ?? 0)}</span></div>`)
+        .map((line) => `<div class="text-[11px] text-slate-500">• ${esc(line.name)} • <span dir="ltr">${line.quantity ?? 0}${line.unit ? ` ${line.unit}` : ''} × ${formatCurrency(line.unitPrice ?? 0)}</span> = <span dir="ltr" class="font-bold">${formatCurrency(line.total ?? 0)}</span></div>`)
         .join('');
       const payments = (sale.payments ?? [])
-        .map((pay) => `<div class="text-[11px] text-slate-500">💵 <span dir="ltr" class="font-bold">${formatCurrency(pay.amount)}</span> • ${formatDate(pay.date)}${pay.notes ? ` • ${pay.notes}` : ''}</div>`)
+        .map((pay) => `<div class="text-[11px] text-slate-500">💵 <span dir="ltr" class="font-bold">${formatCurrency(pay.amount)}</span> • ${formatDate(pay.date)}${esc(pay.notes) ? ` • ${esc(pay.notes)}` : ''}</div>`)
         .join('');
       return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
 <td class="p-4 text-slate-600 whitespace-nowrap">${formatDate(sale.date)}</td>
-<td class="p-4 text-slate-800 font-bold">${sale.buyerName}${sale.isAdvance === true ? ' (عربون)' : ''}<div class="mt-1 space-y-0.5">${lines}</div>${sale.notes ? `<div class="text-xs text-slate-500 mt-1">${sale.notes}</div>` : ''}</td>
+<td class="p-4 text-slate-800 font-bold">${esc(sale.buyerName)}${sale.isAdvance === true ? ' (عربون)' : ''}<div class="mt-1 space-y-0.5">${lines}</div>${esc(sale.notes) ? `<div class="text-xs text-slate-500 mt-1">${sale.notes}</div>` : ''}</td>
 <td class="p-4 text-slate-600 text-sm font-bold">${status}<div class="mt-1 space-y-0.5">${payments}</div></td>
 <td class="p-4 font-black font-mono" dir="ltr">${formatCurrency(sale.totalAmount)}</td>
 <td class="p-4 font-bold font-mono text-emerald-700" dir="ltr">${formatCurrency(paid)}</td>
@@ -682,7 +695,7 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
       const balance = buyerBalance(buyer, sales);
       const count = buyerSales(buyer, sales).length;
       return `<tr class="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-<td class="p-4 text-slate-800 font-bold">${buyer.name}${buyer.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${buyer.phone}</div>` : ''}</td>
+<td class="p-4 text-slate-800 font-bold">${esc(buyer.name)}${buyer.phone ? `<div class="text-xs text-slate-500 mt-1">📞 ${esc(buyer.phone)}</div>` : ''}</td>
 <td class="p-4 font-black font-mono ${balance < 0 ? 'text-rose-700' : 'text-emerald-700'}" dir="ltr">${formatCurrency(balance)}</td>
 <td class="p-4 text-slate-600 font-mono" dir="ltr">${count}</td></tr>`;
     })
@@ -702,8 +715,8 @@ export function partnershipHtml(partnership: Partnership, exportDate: string): s
 ${header('كشف حساب شراكة', exportDate)}
 <section class="mb-8 bg-gradient-to-br from-slate-50 to-white p-8 rounded-2xl border border-slate-100 shadow-sm">
 <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">الشراكة</h2>
-<p class="text-3xl font-black text-slate-800">${partnership.name}</p>
-<p class="text-sm text-slate-500 mt-2 font-bold">الشركاء: ${partnership.partners.map((partner) => `${partner.name} (${partnership.shares[partner.id] ?? 0}%)`).join('، ') || '—'} • نسبتي ${partnership.shares['me'] ?? 0}% • ${partnership.status === 'active' ? 'نشطة' : 'مسواة'}</p>
+<p class="text-3xl font-black text-slate-800">${esc(partnership.name)}</p>
+<p class="text-sm text-slate-500 mt-2 font-bold">الشركاء: ${partnership.partners.map((partner) => `${esc(partner.name)} (${partnership.shares[partner.id] ?? 0}%)`).join('، ') || '—'} • نسبتي ${partnership.shares['me'] ?? 0}% • ${partnership.status === 'active' ? 'نشطة' : 'مسواة'}</p>
 </section>
 <section class="mb-8"><div class="bg-gradient-to-r from-teal-500 to-emerald-600 rounded-xl p-6 text-white shadow-xl">
 <div class="flex justify-between items-center"><div>
@@ -720,7 +733,7 @@ ${header('كشف حساب شراكة', exportDate)}
 <div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">المدفوع للمورد</div><div class="font-black" dir="ltr">${formatCurrency(s.supplierPaid)}</div></div>
 <div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">المتبقي للمورد</div><div class="font-black" dir="ltr">${formatCurrency(s.supplierBalance)}</div></div>
 <div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">نصيبي من الربح</div><div class="font-black" dir="ltr">${formatCurrency(s.myProfit)}</div></div>
-${partnership.partners.map((partner) => `<div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">نصيب ${partner.name}</div><div class="font-black" dir="ltr">${formatCurrency(s.profits[partner.id] ?? 0)}</div></div>`).join('')}
+${partnership.partners.map((partner) => `<div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">نصيب ${esc(partner.name)}</div><div class="font-black" dir="ltr">${formatCurrency(s.profits[partner.id] ?? 0)}</div></div>`).join('')}
 <div class="bg-white/10 rounded-lg p-3"><div class="text-white/70 mb-1">مساهمتي / مساهمات الشركاء</div><div class="font-black" dir="ltr">${formatCurrency(s.contributedMe)} / ${formatCurrency(partnership.partners.reduce((sum, partner) => sum + (s.contributed[partner.id] ?? 0), 0))}</div></div>
 </div></div></section>
 <section class="mb-8"><div class="flex items-center gap-2 mb-4">
@@ -736,7 +749,7 @@ ${partnership.partners.map((partner) => `<div class="bg-white/10 rounded-lg p-3"
 <tbody>${itemsRows || '<tr><td class="p-4 text-center text-slate-400" colspan="5">لا أصناف</td></tr>'}</tbody></table></div></section>
 <section class="mb-8"><div class="flex items-center gap-2 mb-4">
 <div class="w-1 h-6 bg-amber-600 rounded-full"></div>
-<h3 class="text-lg font-bold text-slate-800">المورد${partnership.supplierName ? `: ${partnership.supplierName}` : ''}</h3></div>
+<h3 class="text-lg font-bold text-slate-800">المورد${partnership.supplierName ? `: ${esc(partnership.supplierName)}` : ''}</h3></div>
 <div class="grid grid-cols-3 gap-3 mb-4 text-center text-sm">
 <div class="bg-slate-50 rounded-lg p-3 border border-slate-200"><div class="text-slate-500 mb-1">إجمالي التكلفة</div><div class="font-black" dir="ltr">${formatCurrency(supplierCost)}</div></div>
 <div class="bg-emerald-50 rounded-lg p-3 border border-emerald-100"><div class="text-emerald-600 mb-1">المدفوع</div><div class="font-black" dir="ltr">${formatCurrency(supplierPaidTotal)}</div></div>
@@ -796,10 +809,10 @@ export function archiveReportHtml(
 <tbody>${archivedLots
         .map(
           (item, i) => `<tr>
-<td>${i + 1}</td><td>${item.entityName}</td><td>${item.entityBuyer || '-'}</td>
-<td>${item.lot.lotNumber}</td><td>${item.lot.name}</td><td>${item.lot.quantity || '-'}</td>
+<td>${i + 1}</td><td>${esc(item.entityName)}</td><td>${esc(item.entityBuyer) || '-'}</td>
+<td>${item.lot.lotNumber}</td><td>${esc(item.lot.name)}</td><td>${esc(item.lot.quantity) || '-'}</td>
 <td>${formatCurrency(item.lot.totalValue)}</td><td>${formatCurrency(item.lot.value30)}</td><td>${formatCurrency(item.lot.value70)}</td>
-<td>${item.lot.loadingDetails?.loaderName || '-'}</td></tr>`,
+<td>${esc(item.lot.loadingDetails?.loaderName) || '-'}</td></tr>`,
         )
         .join('')}</tbody></table></div>`
       : '';
@@ -809,7 +822,7 @@ export function archiveReportHtml(
 <tbody>${archivedClients
     .map((client, i) => {
       const total = (client.transactions || []).reduce((acc, t) => acc + (t.amount || 0), 0);
-      return `<tr><td>${i + 1}</td><td>${client.name}</td>
+      return `<tr><td>${i + 1}</td><td>${esc(client.name)}</td>
 <td>${formatCurrency(Math.abs(total))} ${total >= 0 ? '(مدين)' : '(دائن)'}</td>
 <td>${client.transactions?.length || 0}</td></tr>`;
     })

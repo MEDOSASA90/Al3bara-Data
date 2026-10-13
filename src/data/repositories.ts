@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -12,6 +13,7 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -19,6 +21,7 @@ import { db } from '../config/firebase';
 import { COLLECTIONS } from '../domain/constants';
 import type {
   ArchiveType,
+  Audit,
   BuyerTopUp,
   Client,
   ClientType,
@@ -39,6 +42,7 @@ import type {
   ShareScope,
   SupplierPayment,
   Transaction,
+  TransactionDocMeta,
 } from '../domain/types';
 
 /* ---------- collection helpers ---------- */
@@ -278,6 +282,11 @@ export function toPartnership(id: string, data: DocumentData): Partnership {
 }
 
 export function toClient(id: string, data: DocumentData): Client {
+  const auditRaw = data['audit'];
+  const audit: Audit | undefined =
+    auditRaw && typeof auditRaw === 'object' && !Array.isArray(auditRaw)
+      ? (auditRaw as Audit)
+      : undefined;
   return {
     id,
     userId: typeof data['userId'] === 'string' ? (data['userId'] as string) : '',
@@ -287,7 +296,34 @@ export function toClient(id: string, data: DocumentData): Client {
     isArchived: data['isArchived'] === true,
     archiveType: data['archiveType'] as ArchiveType | undefined,
     phone: data['phone'] as string | string[] | undefined,
+    audit,
   };
+}
+
+/** Maps one transaction subcollection doc (keeps the doc id as the transaction id). */
+export function toTransactionDoc(
+  id: string,
+  data: DocumentData,
+): Transaction & TransactionDocMeta {
+  const tx: Transaction & TransactionDocMeta = {
+    id,
+    amount: typeof data['amount'] === 'number' ? (data['amount'] as number) : 0,
+    notes: typeof data['notes'] === 'string' ? (data['notes'] as string) : '',
+    date: (data['date'] ?? Timestamp.now()) as Transaction['date'],
+    isSettled: data['isSettled'] === true,
+    clientId: typeof data['clientId'] === 'string' ? (data['clientId'] as string) : '',
+    clientType: data['clientType'] === 'work' ? 'work' : 'advance',
+    userId: typeof data['userId'] === 'string' ? (data['userId'] as string) : '',
+  };
+  const items = data['items'];
+  if (Array.isArray(items)) tx.items = items as Transaction['items'];
+  if (typeof data['entityId'] === 'string') tx.entityId = data['entityId'] as string;
+  if (typeof data['partnershipId'] === 'string') tx.partnershipId = data['partnershipId'] as string;
+  const image = data['image'];
+  if (image && typeof image === 'object') tx.image = image as Transaction['image'];
+  if (typeof data['createdBy'] === 'string') tx.createdBy = data['createdBy'] as string;
+  if (typeof data['updatedBy'] === 'string') tx.updatedBy = data['updatedBy'] as string;
+  return tx;
 }
 
 export function toEntity(id: string, data: DocumentData): Entity {
@@ -437,6 +473,23 @@ export function subscribeToClients(
   );
 }
 
+/**
+ * Live subscription to EVERY transaction subcollection doc owned by the user
+ * (across advanceClients + workClients). App merges with legacy in-doc arrays.
+ */
+export function subscribeToAllTransactions(
+  userId: string,
+  onData: (txs: (Transaction & TransactionDocMeta)[]) => void,
+  onError: (error: Error) => void,
+): Unsubscribe {
+  const ref = query(collectionGroup(db, 'transactions'), where('userId', '==', userId));
+  return onSnapshot(
+    ref,
+    (snapshot) => onData(snapshot.docs.map((d) => toTransactionDoc(d.id, d.data()))),
+    (error) => onError(error as Error),
+  );
+}
+
 export function subscribeToEntities(
   onData: (entities: Entity[]) => void,
   onError: (error: Error) => void,
@@ -516,43 +569,125 @@ export interface NewClientInput {
   userId: string;
   phone?: string;
   isBuyer?: boolean;
+  /** Audit: email or uid of the creator. */
+  createdBy?: string;
 }
 
 export async function createClient(type: ClientType, input: NewClientInput): Promise<string> {
+  const audit: Audit = {
+    createdBy: input.createdBy ?? input.userId,
+    createdAt: Timestamp.now(),
+  };
   const ref = await addDoc(collection(db, clientCollection(type)), {
     name: input.name,
     userId: input.userId,
     phone: input.phone ?? '',
     isBuyer: input.isBuyer ?? false,
     transactions: [],
+    audit,
   });
   return ref.id;
 }
 
-export async function setClientTransactions(
-  type: ClientType,
-  clientId: string,
-  transactions: Transaction[],
-): Promise<void> {
-  await updateDoc(doc(db, clientCollection(type), clientId), { transactions });
+/* ---------- transaction subcollection (the canonical storage) ---------- */
+
+function txDocRef(type: ClientType, clientId: string, txId: string) {
+  return doc(db, clientCollection(type), clientId, 'transactions', txId);
 }
 
-export async function markClientBuyer(
+/** Firestore payload for one transaction doc (+ parent metadata for group queries). */
+function txDocPayload(
+  tx: Transaction,
+  meta: TransactionDocMeta,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    id: tx.id,
+    amount: tx.amount,
+    notes: tx.notes,
+    date: tx.date,
+    isSettled: tx.isSettled,
+    items: tx.items ?? [],
+    clientId: meta.clientId,
+    clientType: meta.clientType,
+    userId: meta.userId,
+  };
+  if (tx.entityId) payload['entityId'] = tx.entityId;
+  if (tx.partnershipId) payload['partnershipId'] = tx.partnershipId;
+  if (tx.image) payload['image'] = tx.image;
+  if (tx.createdBy) payload['createdBy'] = tx.createdBy;
+  if (tx.updatedBy) payload['updatedBy'] = tx.updatedBy;
+  return payload;
+}
+
+/** Adds one transaction as a subcollection doc (idempotent: doc id = tx.id). */
+export async function addClientTransaction(
   type: ClientType,
   clientId: string,
-  transactions: Transaction[],
+  userId: string,
+  tx: Transaction,
 ): Promise<void> {
-  await updateDoc(doc(db, clientCollection(type), clientId), { transactions, isBuyer: true });
+  await setDoc(
+    txDocRef(type, clientId, tx.id),
+    txDocPayload(tx, { clientId, clientType: type, userId }),
+  );
+}
+
+/** Updates one transaction in place (same doc id). */
+export async function updateClientTransaction(
+  type: ClientType,
+  clientId: string,
+  userId: string,
+  tx: Transaction,
+): Promise<void> {
+  await addClientTransaction(type, clientId, userId, tx);
+}
+
+/**
+ * Deletes one transaction: removes the subcollection doc AND any legacy
+ * in-doc array copy (which would otherwise reappear after migration).
+ */
+export async function deleteClientTransaction(
+  type: ClientType,
+  clientId: string,
+  txId: string,
+): Promise<void> {
+  await deleteDoc(txDocRef(type, clientId, txId));
+  const clientRef = doc(db, clientCollection(type), clientId);
+  const snapshot = await getDoc(clientRef);
+  const data = snapshot.data();
+  const legacy = asTransactionList(data?.['transactions']);
+  if (legacy.some((t) => t.id === txId)) {
+    await updateDoc(clientRef, { transactions: legacy.filter((t) => t.id !== txId) });
+  }
+}
+
+/** Removes ALL transactions matching a predicate (subcollection docs + legacy array copies). */
+export async function deleteClientTransactionsWhere(
+  type: ClientType,
+  clientId: string,
+  predicate: (tx: Transaction) => boolean,
+): Promise<void> {
+  const sub = collection(db, clientCollection(type), clientId, 'transactions');
+  const snapshot = await getDocs(sub);
+  for (const d of snapshot.docs) {
+    const tx = toTransactionDoc(d.id, d.data());
+    if (predicate(tx)) await deleteDoc(d.ref);
+  }
+  const clientRef = doc(db, clientCollection(type), clientId);
+  const clientSnapshot = await getDoc(clientRef);
+  const data = clientSnapshot.data();
+  const legacy = asTransactionList(data?.['transactions']);
+  if (legacy.some(predicate)) {
+    await updateDoc(clientRef, { transactions: legacy.filter((tx) => !predicate(tx)) });
+  }
 }
 
 export async function archiveClient(
   type: ClientType,
   clientId: string,
-  transactions: Transaction[],
   archiveType: ArchiveType,
 ): Promise<void> {
   await updateDoc(doc(db, clientCollection(type), clientId), {
-    transactions,
     isArchived: true,
     archiveType,
   });
@@ -566,6 +701,12 @@ export async function restoreClient(type: ClientType, clientId: string): Promise
 }
 
 export async function deleteClient(type: ClientType, clientId: string): Promise<void> {
+  // Clean up the transactions subcollection first, then the client doc.
+  const sub = collection(db, clientCollection(type), clientId, 'transactions');
+  const snapshot = await getDocs(sub);
+  for (const d of snapshot.docs) {
+    await deleteDoc(d.ref);
+  }
   await deleteDoc(doc(db, clientCollection(type), clientId));
 }
 
@@ -576,15 +717,22 @@ export interface NewEntityInput {
   buyerName: string;
   auctionDate: Entity['auctionDate'];
   userId: string;
+  /** Audit: email or uid of the creator. */
+  createdBy?: string;
 }
 
 export async function createEntity(input: NewEntityInput): Promise<string> {
+  const audit: Audit = {
+    createdBy: input.createdBy ?? input.userId,
+    createdAt: Timestamp.now(),
+  };
   const ref = await addDoc(collection(db, COLLECTIONS.entities), {
     name: input.name,
     buyerName: input.buyerName,
     auctionDate: input.auctionDate,
     userId: input.userId,
     lots: [],
+    audit,
   });
   return ref.id;
 }
@@ -592,12 +740,19 @@ export async function createEntity(input: NewEntityInput): Promise<string> {
 export async function updateEntityMeta(
   entityId: string,
   patch: { name: string; buyerName: string; auctionDate: Entity['auctionDate'] },
+  editor?: string,
 ): Promise<void> {
-  await updateDoc(doc(db, COLLECTIONS.entities, entityId), patch);
+  const audit: Audit = { updatedBy: editor ?? '', updatedAt: Timestamp.now() };
+  await updateDoc(doc(db, COLLECTIONS.entities, entityId), { ...patch, audit });
 }
 
-export async function setEntityLots(entityId: string, lots: Lot[]): Promise<void> {
-  await updateDoc(doc(db, COLLECTIONS.entities, entityId), { lots });
+export async function setEntityLots(
+  entityId: string,
+  lots: Lot[],
+  editor?: string,
+): Promise<void> {
+  const audit: Audit = { updatedBy: editor ?? '', updatedAt: Timestamp.now() };
+  await updateDoc(doc(db, COLLECTIONS.entities, entityId), { lots, audit });
 }
 
 export async function appendEntityLots(
@@ -817,6 +972,58 @@ export async function createRejectedLot(input: NewRejectedLotInput): Promise<str
 
 export async function deleteRejectedLot(id: string): Promise<void> {
   await deleteDoc(doc(db, COLLECTIONS.rejectedLots, id));
+}
+
+/* ---------- one-time transactions migration (array -> subcollection) ---------- */
+
+export interface MigrationProgress {
+  clientName: string;
+  index: number;
+  total: number;
+  movedTxs: number;
+}
+
+/**
+ * Moves the legacy in-doc transactions array of ONE client into the
+ * transactions subcollection, atomically per client (writeBatch).
+ * Every tx doc keeps the array tx id (re-runs are idempotent) and the
+ * array is cleared in the same batch as the last chunk.
+ */
+export async function migrateClientTransactions(
+  type: ClientType,
+  clientId: string,
+  clientName: string,
+  userId: string,
+  index: number,
+  total: number,
+  onProgress?: (progress: MigrationProgress) => void,
+): Promise<{ moved: number }> {
+  const clientRef = doc(db, clientCollection(type), clientId);
+  const snapshot = await getDoc(clientRef);
+  const legacy = asTransactionList(snapshot.data()?.['transactions']);
+  if (legacy.length === 0) {
+    onProgress?.({ clientName, index, total, movedTxs: 0 });
+    return { moved: 0 };
+  }
+
+  const BATCH_LIMIT = 450;
+  let moved = 0;
+  for (let start = 0; start < legacy.length; start += BATCH_LIMIT) {
+    const chunk = legacy.slice(start, start + BATCH_LIMIT);
+    const batch = writeBatch(db);
+    for (const tx of chunk) {
+      const meta: TransactionDocMeta = { clientId, clientType: type, userId };
+      batch.set(txDocRef(type, clientId, tx.id), txDocPayload(tx, meta));
+      moved += 1;
+    }
+    const isLastChunk = start + BATCH_LIMIT >= legacy.length;
+    if (isLastChunk) {
+      batch.update(clientRef, { transactions: [] });
+    }
+    await batch.commit();
+  }
+  onProgress?.({ clientName, index, total, movedTxs: legacy.length });
+  return { moved };
 }
 
 /* ---------- brochure library writes ---------- */

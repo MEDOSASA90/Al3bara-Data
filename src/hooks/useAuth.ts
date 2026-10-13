@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   type User as FirebaseUser,
@@ -29,6 +30,7 @@ export function useAuth(): {
   authLoading: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   loginError: string | null;
 } {
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -88,5 +90,18 @@ export function useAuth(): {
     await signOut(auth);
   };
 
-  return { user, authLoading, login, logout, loginError };
+  const resetPassword = async (email: string): Promise<void> => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      if (code.includes('invalid-email')) throw new Error('صيغة البريد الإلكتروني غير صحيحة.');
+      if (code.includes('user-not-found')) throw new Error('مفيش حساب مسجل بالبريد ده.');
+      if (code.includes('too-many-requests')) throw new Error('محاولات كثيرة. انتظر قليلاً وحاول مجدداً.');
+      if (code.includes('network')) throw new Error('تعذر الاتصال. تحقق من الإنترنت وحاول مجدداً.');
+      throw new Error('تعذر إرسال رابط الاستعادة. حاول مجدداً.');
+    }
+  };
+
+  return { user, authLoading, login, logout, resetPassword, loginError };
 }

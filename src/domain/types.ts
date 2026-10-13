@@ -10,7 +10,8 @@ export type ViewMode =
   | 'archiveMenu'
   | 'archiveEntities'
   | 'archiveWork'
-  | 'archiveAdvances';
+  | 'archiveAdvances'
+  | 'settings';
 
 export type ClientType = 'advance' | 'work';
 
@@ -48,6 +49,16 @@ export interface Transaction {
   /** Links a partner-commission credit back to its partnership. */
   partnershipId?: string;
   image?: ImageRef;
+  /** Who created / last edited this record (email or uid). */
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+/** Extra fields stored on transaction subcollection docs (not on legacy arrays). */
+export interface TransactionDocMeta {
+  clientId: string;
+  clientType: ClientType;
+  userId: string;
 }
 
 export interface Client {
@@ -60,6 +71,8 @@ export interface Client {
   archiveType?: ArchiveType;
   /** Single phone or several phones joined by ", " — kept for backward compatibility. */
   phone?: string | string[];
+  /** Audit trail: who created / last edited the client record. */
+  audit?: Audit;
 }
 
 export interface PaymentDetails {
@@ -97,6 +110,9 @@ export interface Lot {
   loadingDetails?: LoadingDetails;
   contractImage?: ImageRef;
   isArchived: boolean;
+  /** Who created / last edited this lot (email or uid). */
+  createdBy?: string;
+  updatedBy?: string;
 }
 
 export interface Entity {
@@ -106,6 +122,8 @@ export interface Entity {
   buyerName?: string;
   auctionDate: Timestamp;
   lots: Lot[];
+  /** Audit trail: who created / last edited the entity record. */
+  audit?: Audit;
 }
 
 export interface PredefinedItem {

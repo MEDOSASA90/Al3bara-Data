@@ -3,11 +3,11 @@ import { activeLotsTotal, calcCommission } from '../domain/finance';
 import type { Client, Entity, Transaction } from '../domain/types';
 import { formatDate } from '../utils/format';
 import {
-  archiveClientDoc,
-  createBuyerClient,
-  removeCommissionTransactions,
-  updateBuyerTransactions,
-} from './commissionWrites';
+  addClientTransaction,
+  deleteClientTransactionsWhere,
+  updateClientTransaction,
+} from './repositories';
+import { createBuyerClient } from './commissionWrites';
 
 export interface CommissionContext {
   userId: string;
@@ -15,9 +15,10 @@ export interface CommissionContext {
 }
 
 /**
- * Replicates the original `syncBuyerCommission` behavior exactly:
- * - commission = 0.5% of active (non-archived) lots total
+ * Buyer commission sync (0.5% of active lots total):
  * - stored as a settled credit (-amount) transaction linked by entityId
+ * - every write targets the transaction SUBCOLLECTION (doc id preserved, so
+ *   legacy in-doc copies are shadowed by the merge until migration clears them)
  * - follows the buyer when it changes, updates in place, removed at zero
  */
 export async function syncBuyerCommission(
@@ -26,32 +27,29 @@ export async function syncBuyerCommission(
 ): Promise<void> {
   const commission = calcCommission(activeLotsTotal(entity));
   const buyerName = entity.buyerName?.trim() ?? '';
+  const matchEntity = (tx: Transaction): boolean => tx.entityId === entity.id;
 
   for (const client of context.advanceClients) {
-    const index = client.transactions.findIndex((t) => t.entityId === entity.id);
-    if (index === -1) continue;
+    const tx = client.transactions.find(matchEntity);
+    if (!tx) continue;
 
     if (client.name === buyerName) {
       if (commission > 0) {
-        const updated = [...client.transactions];
-        const current = updated[index];
-        if (!current) continue;
-        updated[index] = {
-          ...current,
+        await updateClientTransaction('advance', client.id, context.userId, {
+          ...tx,
           amount: -commission,
           date: entity.auctionDate ?? Timestamp.now(),
           notes: `عمولة 0.5% عن جلسة بتاريخ ${formatDate(entity.auctionDate)}`,
           isSettled: true,
-        };
-        await updateBuyerTransactions(client.id, updated);
+        });
       } else {
-        await removeCommissionTransactions(client.id, entity.id);
+        await deleteClientTransactionsWhere('advance', client.id, matchEntity);
       }
       return;
     }
 
-    // Buyer changed — drop the commission from the previous owner.
-    await removeCommissionTransactions(client.id, entity.id);
+    // Buyer changed — drop the commission from the previous owner(s).
+    await deleteClientTransactionsWhere('advance', client.id, matchEntity);
   }
 
   if (commission > 0 && buyerName) {
@@ -64,14 +62,13 @@ export async function syncBuyerCommission(
       date: entity.auctionDate ?? Timestamp.now(),
       isSettled: true,
       items: [],
+      createdBy: 'العمولة التلقائية',
     };
 
     if (buyerClient) {
-      await updateBuyerTransactions(buyerClient.id, [...buyerClient.transactions, commissionTx]);
+      await addClientTransaction('advance', buyerClient.id, context.userId, commissionTx);
     } else {
       await createBuyerClient(context.userId, buyerName, commissionTx);
     }
   }
 }
-
-export { archiveClientDoc };

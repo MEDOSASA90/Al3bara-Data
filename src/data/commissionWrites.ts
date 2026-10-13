@@ -1,75 +1,27 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  updateDoc,
-  type DocumentData,
-} from 'firebase/firestore';
+import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS } from '../domain/constants';
-import type { Transaction } from '../domain/types';
-import { toClient } from './repositories';
+import type { Audit, Transaction } from '../domain/types';
+import { addClientTransaction } from './repositories';
 
-async function readAdvanceClient(clientId: string): Promise<{ transactions: Transaction[] }> {
-  const snapshot = await getDoc(doc(db, COLLECTIONS.advanceClients, clientId));
-  const data: DocumentData | undefined = snapshot.data();
-  if (!data) return { transactions: [] };
-  return { transactions: toClient(snapshot.id, data).transactions };
-}
-
-export async function updateBuyerTransactions(
-  clientId: string,
-  transactions: Transaction[],
-): Promise<void> {
-  await updateDoc(doc(db, COLLECTIONS.advanceClients, clientId), {
-    transactions,
-    isBuyer: true,
-  });
-}
-
-export async function removeCommissionTransactions(
-  clientId: string,
-  entityId: string,
-): Promise<void> {
-  const { transactions } = await readAdvanceClient(clientId);
-  await updateDoc(doc(db, COLLECTIONS.advanceClients, clientId), {
-    transactions: transactions.filter((t) => t.entityId !== entityId),
-  });
-}
-
-export async function removePartnershipCommissionTransactions(
-  clientId: string,
-  partnershipId: string,
-): Promise<void> {
-  const { transactions } = await readAdvanceClient(clientId);
-  await updateDoc(doc(db, COLLECTIONS.advanceClients, clientId), {
-    transactions: transactions.filter((t) => t.partnershipId !== partnershipId),
-  });
-}
-
+/** Creates the buyer client doc and stores the commission tx as a subcollection doc. */
 export async function createBuyerClient(
   userId: string,
   buyerName: string,
   commissionTx: Transaction,
 ): Promise<void> {
-  await addDoc(collection(db, COLLECTIONS.advanceClients), {
+  const audit: Audit = { createdBy: userId, createdAt: commissionTx.date };
+  const ref = await addDoc(collection(db, COLLECTIONS.advanceClients), {
     userId,
     name: buyerName,
     isBuyer: true,
-    transactions: [commissionTx],
+    transactions: [],
+    audit,
   });
+  await addClientTransaction('advance', ref.id, userId, commissionTx);
 }
 
-export async function archiveClientDoc(
-  collectionName: string,
-  clientId: string,
-  transactions: Transaction[],
-  archiveType: string,
-): Promise<void> {
-  await updateDoc(doc(db, collectionName, clientId), {
-    transactions,
-    isArchived: true,
-    archiveType,
-  });
+/** Marks the doc as a buyer account (used when a commission lands on an existing client). */
+export async function markBuyerDoc(clientId: string): Promise<void> {
+  await updateDoc(doc(db, COLLECTIONS.advanceClients, clientId), { isBuyer: true });
 }

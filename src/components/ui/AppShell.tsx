@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'work', label: 'الشغل', icon: '🧾' },
   { id: 'partnerships', label: 'الشركاء', icon: '🤝' },
   { id: 'archiveMenu', label: 'الأرشيف', icon: '🗂️' },
+  { id: 'settings', label: 'الإعدادات', icon: '⚙️' },
 ];
 
 const ARCHIVE_VIEWS: ViewMode[] = ['archiveMenu', 'archiveEntities', 'archiveWork', 'archiveAdvances'];

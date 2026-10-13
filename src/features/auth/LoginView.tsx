@@ -7,6 +7,7 @@ export interface LoginViewProps {
   loading?: boolean;
   error?: string | null;
   onLogin: (email: string, password: string, remember: boolean) => Promise<void>;
+  onResetPassword: (email: string) => Promise<void>;
 }
 
 export function LoginView({
@@ -14,11 +15,33 @@ export function LoginView({
   loading = false,
   error = null,
   onLogin,
+  onResetPassword,
 }: LoginViewProps): ReactNode {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [resetInfo, setResetInfo] = useState<string | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+
+  async function handleReset(): Promise<void> {
+    if (resetBusy) return;
+    if (!email.trim()) {
+      setLocalError('اكتب بريدك الإلكتروني الأول وبعدين اضغط استعادة كلمة السر.');
+      return;
+    }
+    setLocalError(null);
+    setResetInfo(null);
+    setResetBusy(true);
+    try {
+      await onResetPassword(email.trim());
+      setResetInfo('تم إرسال رابط استعادة كلمة السر على بريدك ✅');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'تعذر إرسال رابط الاستعادة.');
+    } finally {
+      setResetBusy(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -61,6 +84,15 @@ export function LoginView({
               className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300"
             >
               ⚠️ {visibleError}
+            </div>
+          )}
+
+          {resetInfo && (
+            <div
+              role="status"
+              className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+            >
+              {resetInfo}
             </div>
           )}
 
@@ -113,6 +145,14 @@ export function LoginView({
               />
               تذكرني
             </label>
+            <button
+              type="button"
+              onClick={() => void handleReset()}
+              disabled={resetBusy}
+              className="text-xs font-bold text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+            >
+              {resetBusy ? 'جارٍ الإرسال…' : 'نسيت كلمة السر؟'}
+            </button>
           </div>
 
           <button

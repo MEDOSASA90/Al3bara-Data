@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { AppShell } from './components/ui/AppShell';
 import { Modal } from './components/ui/Modal';
@@ -39,7 +39,9 @@ import {
   deleteRejectedLot,
   restoreClient,
   revokeShareLink,
-  setClientTransactions,
+  addClientTransaction,
+  updateClientTransaction,
+  deleteClientTransaction,
   setEntityLots,
   setPartnershipBuyers,
   setPartnershipItems,
@@ -51,6 +53,7 @@ import {
   subscribeToEntities,
   subscribeToClients,
   subscribeToPartnerships,
+  subscribeToAllTransactions,
   subscribeToPredefinedBuyers,
   subscribeToPredefinedItems,
   subscribeToRejectedLots,
@@ -79,6 +82,7 @@ import type {
   ShareLink,
   SupplierPayment,
   Transaction,
+  TransactionDocMeta,
   ViewMode,
 } from './domain/types';
 import { activeLotsTotal, buyerBalance, calcCommission, clientBalance, isLotUnpaid, partnershipSettlement, payments70Remaining } from './domain/finance';
@@ -94,15 +98,10 @@ import { printHtmlDocument } from './utils/print';
 import { uniqueId } from './utils/ids';
 import { LoginView } from './features/auth/LoginView';
 import { DashboardView } from './features/dashboard/DashboardView';
-import { EntitiesView, type LotStatusFilter } from './features/entities/EntitiesView';
 import { EntityModal, type EntityFormData } from './features/entities/EntityModal';
 import { LotModal, type LotFormData } from './features/entities/LotModal';
 import { SupplyModal, type SupplyFormData } from './features/entities/SupplyModal';
 import { LoadingModal, type LoadingFormData } from './features/entities/LoadingModal';
-import { ClientsView } from './features/clients/ClientsView';
-import { PartnershipsView } from './features/partnerships/PartnershipsView';
-import { PartnershipDetails, type SupplierPaymentFormData } from './features/partnerships/PartnershipDetails';
-import { ShareView } from './features/partnerships/ShareView';
 import { PartnershipModal, type PartnershipFormData } from './features/partnerships/PartnershipModal';
 import type { PartnershipItemFormData } from './features/partnerships/ItemModal';
 import type { PartnershipTxFormData } from './features/partnerships/TxModal';
@@ -113,20 +112,37 @@ import { BuyerProfileModal, type BuyerSaleRef } from './features/partnerships/Bu
 import { ClientModal } from './features/clients/ClientModal';
 import { TransactionModal, type TransactionFormData } from './features/clients/TransactionModal';
 import { PaymentModal, type PaymentFormData } from './features/clients/PaymentModal';
-import {
-  ArchiveClientsView,
-  ArchiveLotsView,
-  ArchiveMenuView,
-  type ArchiveMenuTarget,
-} from './features/archive/ArchiveView';
-import {
-  AuctionBrochureModal,
-  type AwardedEntityPayload,
-  type RejectedLotInput,
-} from './features/brochures/AuctionBrochureModal';
 import { AiAssistant } from './features/ai/AiAssistant';
 import { InsightsCards } from './features/ai/InsightsCards';
 import { buildBusinessSnapshot } from './ai/assistant';
+import { SettingsView } from './features/settings/SettingsView';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { ToastProvider, useToast } from './components/ui/Toast';
+import { APP_VERSION } from './domain/version';
+import { groupTransactionsByClientId, mergeClientsWithTransactions } from './domain/clientMerge';
+import type { LotStatusFilter } from './features/entities/EntitiesView';
+import type { SupplierPaymentFormData } from './features/partnerships/PartnershipDetails';
+import type { ArchiveMenuTarget } from './features/archive/ArchiveView';
+import type { AwardedEntityPayload, RejectedLotInput } from './features/brochures/AuctionBrochureModal';
+
+/* Heavy views load on demand — pdf.js and the AI modules ship in their own chunk. */
+const EntitiesView = lazy(() => import('./features/entities/EntitiesView').then((m) => ({ default: m.EntitiesView })));
+const ClientsView = lazy(() => import('./features/clients/ClientsView').then((m) => ({ default: m.ClientsView })));
+const PartnershipsView = lazy(() => import('./features/partnerships/PartnershipsView').then((m) => ({ default: m.PartnershipsView })));
+const PartnershipDetails = lazy(() => import('./features/partnerships/PartnershipDetails').then((m) => ({ default: m.PartnershipDetails })));
+const ArchiveClientsView = lazy(() => import('./features/archive/ArchiveView').then((m) => ({ default: m.ArchiveClientsView })));
+const ArchiveLotsView = lazy(() => import('./features/archive/ArchiveView').then((m) => ({ default: m.ArchiveLotsView })));
+const ArchiveMenuView = lazy(() => import('./features/archive/ArchiveView').then((m) => ({ default: m.ArchiveMenuView })));
+const AuctionBrochureModal = lazy(() => import('./features/brochures/AuctionBrochureModal').then((m) => ({ default: m.AuctionBrochureModal })));
+const ShareView = lazy(() => import('./features/partnerships/ShareView').then((m) => ({ default: m.ShareView })));
+
+function LazyFallback(): ReactNode {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <p className="text-sm font-bold text-slate-500 dark:text-slate-400">⏳ جاري التحميل...</p>
+    </div>
+  );
+}
 
 /* ---------- small local dialogs ---------- */
 
@@ -215,6 +231,7 @@ const VIEW_TITLES: Record<ViewMode, string> = {
   archiveEntities: 'أرشيف الجهات',
   archiveWork: 'أرشيف الشغل',
   archiveAdvances: 'أرشيف السلف',
+  settings: 'الإعدادات',
 };
 
 /** Public partner share route: #/share/TOKEN (viewed without login). */
@@ -226,7 +243,7 @@ function shareTokenFromHash(): string | null {
 function viewFromHash(): ViewMode {
   if (shareTokenFromHash() !== null) return 'dashboard';
   const hash = window.location.hash.replace('#', '');
-  const known: ViewMode[] = ['dashboard', 'entities', 'advances', 'work', 'partnerships', 'archiveMenu', 'archiveEntities', 'archiveWork', 'archiveAdvances'];
+  const known: ViewMode[] = ['dashboard', 'entities', 'advances', 'work', 'partnerships', 'archiveMenu', 'archiveEntities', 'archiveWork', 'archiveAdvances', 'settings'];
   return known.includes(hash as ViewMode) ? (hash as ViewMode) : 'dashboard';
 }
 
@@ -284,8 +301,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     [],
   );
 
-  const { items: advanceClients, error: advancesError } = useLiveQuery(subscribeAdvances);
-  const { items: workClients, error: workError } = useLiveQuery(subscribeWork);
+  const { items: advanceClientsRaw, error: advancesError } = useLiveQuery(subscribeAdvances);
+  const { items: workClientsRaw, error: workError } = useLiveQuery(subscribeWork);
   const { items: entities, error: entitiesError } = useLiveQuery(subscribeEntitiesCb);
   const { items: partnerships, error: partnershipsError } = useLiveQuery(subscribePartnerships);
   const { items: predefinedItems } = useLiveQuery(subscribeItems);
@@ -293,7 +310,25 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const { items: rejectedLots } = useLiveQuery(subscribeRejected);
   const { items: savedBrochures } = useLiveQuery(subscribeBrochuresCb);
 
-  const dbError = advancesError ?? workError ?? entitiesError ?? partnershipsError;
+  const subscribeAllTx = useCallback(
+    (onData: (txs: (Transaction & TransactionDocMeta)[]) => void, onError: (error: Error) => void) =>
+      subscribeToAllTransactions(user.uid, onData, onError),
+    [user.uid],
+  );
+  const { items: allTxDocs, error: txDocsError } = useLiveQuery(subscribeAllTx);
+
+  /* Legacy in-doc arrays + subcollection docs merged (subcollection wins by id). */
+  const txByClientId = useMemo(() => groupTransactionsByClientId(allTxDocs), [allTxDocs]);
+  const advanceClients = useMemo(
+    () => mergeClientsWithTransactions(advanceClientsRaw, txByClientId),
+    [advanceClientsRaw, txByClientId],
+  );
+  const workClients = useMemo(
+    () => mergeClientsWithTransactions(workClientsRaw, txByClientId),
+    [workClientsRaw, txByClientId],
+  );
+
+  const dbError = advancesError ?? workError ?? entitiesError ?? partnershipsError ?? txDocsError;
 
   /* ---------- notifications (bell + phone push) ---------- */
   const [seenAlerts, setSeenAlerts] = useState<string[]>(() => {
@@ -333,6 +368,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   }, [savedBrochures]);
 
   const [entitiesFilter, setEntitiesFilter] = useState<LotStatusFilter>('all');
+  const { showToast: toast } = useToast();
+  const editor = useMemo(() => user.email ?? user.uid, [user.email, user.uid]);
 
   const [clientModal, setClientModal] = useState<{ open: boolean; kind: ClientType }>({ open: false, kind: 'advance' });
   const [txModal, setTxModal] = useState<{ open: boolean; kind: ClientType; client: Client | null; tx: Transaction | null }>({
@@ -379,13 +416,13 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       const fileName = `${prefix}_${Date.now()}_${file.name}`;
       const result = await uploadToDrive(base64, fileName, compressed.type || 'image/jpeg');
       if (!result.success) {
-        alert(`فشل الرفع: ${result.error}`);
+        toast(`فشل الرفع: ${result.error}`, 'error');
         return undefined;
       }
       return { name: fileName, url: result.url };
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('فشل رفع الملف');
+      toast('فشل رفع الملف', 'error');
       return undefined;
     }
   }, []);
@@ -393,9 +430,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   /* ----- clients & transactions ----- */
 
   const handleAddClient = useCallback(async (name: string, phone?: string): Promise<void> => {
-    await createClient(clientModal.kind, { name, userId: user.uid, phone });
+    await createClient(clientModal.kind, { name, userId: user.uid, phone, createdBy: editor });
     setClientModal((current) => ({ ...current, open: false }));
-  }, [clientModal.kind, user.uid]);
+  }, [clientModal.kind, editor, user.uid]);
 
   const handleSaveTransaction = useCallback(async (data: TransactionFormData): Promise<void> => {
     if (!txModal.client) return;
@@ -406,16 +443,19 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       date: Timestamp.fromDate(data.date),
       isSettled: data.isSettled,
       items: data.items,
+      createdBy: txModal.tx?.createdBy ?? editor,
+      updatedBy: editor,
     };
     if (data.image) base.image = data.image;
     if (txModal.tx?.entityId) base.entityId = txModal.tx.entityId;
 
-    const updated = txModal.tx
-      ? txModal.client.transactions.map((t) => (t.id === txModal.tx?.id ? base : t))
-      : [...txModal.client.transactions, base];
-    await setClientTransactions(txModal.kind, txModal.client.id, updated);
+    if (txModal.tx) {
+      await updateClientTransaction(txModal.kind, txModal.client.id, user.uid, base);
+    } else {
+      await addClientTransaction(txModal.kind, txModal.client.id, user.uid, base);
+    }
     setTxModal({ open: false, kind: 'advance', client: null, tx: null });
-  }, [txModal]);
+  }, [editor, txModal, user.uid]);
 
   const handleSavePayment = useCallback(async (data: PaymentFormData): Promise<void> => {
     if (!paymentModal.client) return;
@@ -426,11 +466,12 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       notes: notes || 'سداد دفعة',
       date: Timestamp.fromDate(data.date),
       isSettled: true,
+      createdBy: editor,
     };
     if (data.receiptImage) payment.image = data.receiptImage;
-    await setClientTransactions(paymentModal.kind, paymentModal.client.id, [...paymentModal.client.transactions, payment]);
+    await addClientTransaction(paymentModal.kind, paymentModal.client.id, user.uid, payment);
     setPaymentModal({ open: false, kind: 'advance', client: null });
-  }, [paymentModal]);
+  }, [editor, paymentModal, user.uid]);
 
   const handleConfirmSettle = useCallback(async (): Promise<void> => {
     if (!settleReq) return;
@@ -440,11 +481,13 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       notes: 'تسوية نهائية وإغلاق الحساب',
       date: Timestamp.now(),
       isSettled: true,
+      createdBy: editor,
     };
     const archiveType: ArchiveType = settleReq.kind === 'advance' ? 'advances' : 'work';
-    await archiveClient(settleReq.kind, settleReq.client.id, [...settleReq.client.transactions, balancing], archiveType);
+    await addClientTransaction(settleReq.kind, settleReq.client.id, user.uid, balancing);
+    await archiveClient(settleReq.kind, settleReq.client.id, archiveType);
     setSettleReq(null);
-  }, [settleReq]);
+  }, [editor, settleReq, user.uid]);
 
   const handleConfirmRestore = useCallback(async (): Promise<void> => {
     if (!restoreReq) return;
@@ -461,18 +504,18 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
   const handleSaveEntity = useCallback(async (data: EntityFormData): Promise<void> => {
     const name = data.name.trim();
     if (!name) {
-      alert('يرجى إدخال اسم صحيح للجهة.');
+      toast('يرجى إدخال اسم صحيح للجهة.', 'error');
       return;
     }
     const auctionDate = timestampFromDateInput(data.auctionDate);
     if (entityModal.entity) {
-      await updateEntityMeta(entityModal.entity.id, { name, buyerName: data.buyerName, auctionDate });
+      await updateEntityMeta(entityModal.entity.id, { name, buyerName: data.buyerName, auctionDate }, editor);
       await refreshCommission({ ...entityModal.entity, name, buyerName: data.buyerName, auctionDate });
     } else {
-      await createEntity({ name, buyerName: data.buyerName, auctionDate, userId: user.uid });
+      await createEntity({ name, buyerName: data.buyerName, auctionDate, userId: user.uid, createdBy: editor });
     }
     setEntityModal({ open: false, entity: null });
-  }, [entityModal.entity, refreshCommission, user.uid]);
+  }, [editor, entityModal.entity, refreshCommission, user.uid]);
 
   const handleSaveAwardedEntity = useCallback(async (payload: AwardedEntityPayload): Promise<void> => {
     const auctionDate = timestampFromDateInput(payload.auctionDate);
@@ -504,8 +547,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         buyerName: payload.buyerName,
         auctionDate,
         userId: user.uid,
+        createdBy: editor,
       });
-      await setEntityLots(id, newLots);
+      await setEntityLots(id, newLots, editor);
       await refreshCommission({ id, userId: user.uid, name: payload.entityName.trim(), buyerName: payload.buyerName, auctionDate, lots: newLots });
     }
     setBrochureOpen(false);
@@ -549,6 +593,8 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       value70: data.value70,
       is70Paid: lotModal.lot?.is70Paid ?? false,
       isArchived: lotModal.lot?.isArchived ?? false,
+      createdBy: lotModal.lot?.createdBy ?? editor,
+      updatedBy: editor,
     };
     if (data.contractImage) base.contractImage = data.contractImage;
     else if (lotModal.lot?.contractImage) base.contractImage = lotModal.lot.contractImage;
@@ -558,10 +604,10 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     const updated = lotModal.lot
       ? entity.lots.map((l) => (l.id === lotModal.lot?.id ? base : l))
       : [...entity.lots, base];
-    await setEntityLots(entity.id, updated);
+    await setEntityLots(entity.id, updated, editor);
     await refreshCommission({ ...entity, lots: updated });
     setLotModal({ open: false, entityId: '', lot: null });
-  }, [entities, lotModal, refreshCommission]);
+  }, [editor, entities, lotModal, refreshCommission]);
 
   const handleSaveSupply = useCallback(async (data: SupplyFormData): Promise<void> => {
     const entity = entities.find((e) => e.id === supplyModal.entityId);
@@ -605,9 +651,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       }
       return next;
     });
-    await setEntityLots(entity.id, updated);
+    await setEntityLots(entity.id, updated, editor);
     setSupplyModal({ open: false, entityId: '' });
-  }, [entities, supplyModal]);
+  }, [editor, entities, supplyModal]);
 
   const handleSaveLoading = useCallback(async (data: LoadingFormData): Promise<void> => {
     const entity = entities.find((e) => e.id === loadingModal.entityId);
@@ -617,28 +663,28 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       if (!targeted) return lot;
       return { ...lot, isArchived: true, loadingDetails: { loaderName: data.loaderName, date: Timestamp.fromDate(data.date) } };
     });
-    await setEntityLots(entity.id, updated);
+    await setEntityLots(entity.id, updated, editor);
     setLoadingModal({ open: false, entityId: '' });
-  }, [entities, loadingModal]);
+  }, [editor, entities, loadingModal]);
 
   const handleToggleLotArchive = useCallback(async (entityId: string, lotId: string): Promise<void> => {
     const entity = entities.find((e) => e.id === entityId);
     if (!entity) return;
     const updated = entity.lots.map((lot) => (lot.id === lotId ? { ...lot, isArchived: !lot.isArchived } : lot));
-    await setEntityLots(entity.id, updated);
+    await setEntityLots(entity.id, updated, editor);
     await refreshCommission({ ...entity, lots: updated });
-  }, [entities, refreshCommission]);
+  }, [editor, entities, refreshCommission]);
 
   const handleConfirmDeleteLot = useCallback(async (): Promise<void> => {
     if (!deleteLotReq) return;
     const entity = entities.find((e) => e.id === deleteLotReq.entityId);
     if (entity) {
       const updated = entity.lots.filter((l) => l.id !== deleteLotReq.lotId);
-      await setEntityLots(entity.id, updated);
+      await setEntityLots(entity.id, updated, editor);
       await refreshCommission({ ...entity, lots: updated });
     }
     setDeleteLotReq(null);
-  }, [deleteLotReq, entities, refreshCommission]);
+  }, [deleteLotReq, editor, entities, refreshCommission]);
 
   const handleConfirmDeleteEntity = useCallback(async (): Promise<void> => {
     if (!deleteEntityId) return;
@@ -654,13 +700,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
 
   const handleConfirmDeleteTx = useCallback(async (): Promise<void> => {
     if (!deleteTxReq) return;
-    const source = deleteTxReq.kind === 'advance' ? advanceClients : workClients;
-    const client = source.find((c) => c.id === deleteTxReq.clientId);
-    if (client) {
-      await setClientTransactions(deleteTxReq.kind, client.id, client.transactions.filter((t) => t.id !== deleteTxReq.txId));
-    }
+    await deleteClientTransaction(deleteTxReq.kind, deleteTxReq.clientId, deleteTxReq.txId);
     setDeleteTxReq(null);
-  }, [deleteTxReq, advanceClients, workClients]);
+  }, [deleteTxReq]);
 
   /* ----- partnerships (shared goods, profit split by agreement) ----- */
 
@@ -1207,7 +1249,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
     try {
       await printHtmlDocument(html);
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'تعذر الطباعة');
+      toast(error instanceof Error ? error.message : 'تعذر الطباعة', 'error');
     }
   }, []);
 
@@ -1440,6 +1482,16 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
             onRestoreLot={(lot, entityId) => void handleToggleLotArchive(entityId, lot.id)}
           />
         );
+      case 'settings':
+        return (
+          <SettingsView
+            userId={user.uid}
+            userEmail={user.email}
+            appVersion={APP_VERSION}
+            advanceClients={advanceClients}
+            workClients={workClients}
+          />
+        );
     }
   };
 
@@ -1454,7 +1506,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
       onBackup={() => {
         void downloadBackup().then((result) => {
           if (!result.ok) {
-            alert(result.error ?? 'فشل النسخ الاحتياطي');
+            toast(result.error ?? 'فشل النسخ الاحتياطي', 'error');
           }
         });
       }}
@@ -1482,7 +1534,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
           </div>
         ) : null}
 
-        {renderContent()}
+        <ErrorBoundary key={viewMode}>
+          <Suspense fallback={<LazyFallback />}>{renderContent()}</Suspense>
+        </ErrorBoundary>
 
       <ClientModal
         isOpen={clientModal.open}
@@ -1546,8 +1600,10 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         onSave={(data) => void handleSaveLoading(data)}
       />
 
-      <AuctionBrochureModal
-        isOpen={brochureOpen}
+      {brochureOpen ? (
+        <Suspense fallback={<LazyFallback />}>
+          <AuctionBrochureModal
+            isOpen
         onClose={() => {
           setBrochureOpen(false);
           setPreloadedBrochure(null);
@@ -1560,7 +1616,9 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
         rejectedLots={rejectedLots}
         onAddRejectedLot={(input) => handleAddRejectedLot(input)}
         onDeleteRejectedLot={(id) => handleDeleteRejectedLot(id)}
-      />
+          />
+        </Suspense>
+      ) : null}
 
       <QuickAddModal
         isOpen={itemQuickAdd}
@@ -1658,7 +1716,7 @@ function AuthedApp({ user, theme, onToggleTheme, onLogout, onHome, viewMode, onN
 /* ---------- root ---------- */
 
 export default function App(): ReactNode {
-  const { user, authLoading, login, logout, loginError } = useAuth();
+  const { user, authLoading, login, logout, resetPassword, loginError } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [viewMode, setViewMode] = useState<ViewMode>(() => viewFromHash());
   const [shareToken, setShareToken] = useState<string | null>(() => shareTokenFromHash());
@@ -1698,35 +1756,46 @@ export default function App(): ReactNode {
     }
   }, [login]);
 
+  const handleResetPassword = useCallback(async (email: string): Promise<void> => {
+    await resetPassword(email);
+  }, [resetPassword]);
+
   if (authLoading) {
     return <SplashScreen />;
   }
 
-  if (shareToken !== null) {
-    return <ShareView token={shareToken} />;
-  }
-
-  if (!user) {
-    return (
-      <LoginView
-        initialEmail={localStorage.getItem(REMEMBER_EMAIL_KEY) ?? ''}
-        loading={loginBusy}
-        error={loginError}
-        onLogin={handleLogin}
-      />
-    );
-  }
-
   return (
-    <AuthedApp
-      user={user}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      onLogout={() => void handleLogout()}
-      onHome={goHome}
-      viewMode={viewMode}
-      onNavigate={navigate}
-    />
+    <ToastProvider>
+      <ErrorBoundary>
+        {shareToken !== null ? (
+          <Suspense fallback={<LazyFallback />}>
+            <ShareView token={shareToken} />
+          </Suspense>
+        ) : null}
+
+        {!shareToken && !user ? (
+          <LoginView
+            initialEmail={localStorage.getItem(REMEMBER_EMAIL_KEY) ?? ''}
+            loading={loginBusy}
+            error={loginError}
+            onLogin={handleLogin}
+            onResetPassword={handleResetPassword}
+          />
+        ) : null}
+
+        {!shareToken && user ? (
+          <AuthedApp
+            user={user}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onLogout={() => void handleLogout()}
+            onHome={goHome}
+            viewMode={viewMode}
+            onNavigate={navigate}
+          />
+        ) : null}
+      </ErrorBoundary>
+    </ToastProvider>
   );
 }
 

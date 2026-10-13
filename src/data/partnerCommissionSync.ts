@@ -4,10 +4,11 @@ import type { Client, Partnership, Transaction } from '../domain/types';
 import { primaryPartnerName } from '../domain/types';
 import { itemBuyCost } from '../domain/finance';
 import {
-  createBuyerClient,
-  removePartnershipCommissionTransactions,
-  updateBuyerTransactions,
-} from './commissionWrites';
+  addClientTransaction,
+  deleteClientTransactionsWhere,
+  updateClientTransaction,
+} from './repositories';
+import { createBuyerClient } from './commissionWrites';
 
 export interface PartnerCommissionContext {
   userId: string;
@@ -30,14 +31,15 @@ function commissionTx(partnership: Partnership, commission: number): Transaction
     date: partnership.createdAt ?? Timestamp.now(),
     isSettled: true,
     items: [],
+    createdBy: 'العمولة التلقائية',
   };
 }
 
 /**
  * Mirrors `syncBuyerCommission` for partnerships:
  * - commission = 0.5% of buy cost when inOurName, else 0
- * - stored as a settled credit (-amount) transaction linked by partnershipId
- *   on the advance account named partnerName (created as a buyer client if missing)
+ * - stored as a settled credit transaction linked by partnershipId in the
+ *   transaction SUBCOLLECTION of the advance account named after the partner
  * - follows the partner when the name changes, updates in place, removed at zero
  */
 export async function syncPartnerCommission(
@@ -46,32 +48,29 @@ export async function syncPartnerCommission(
 ): Promise<void> {
   const commission = partnerCommissionValue(partnership);
   const partnerName = primaryPartnerName(partnership).trim();
+  const matchPartnership = (tx: Transaction): boolean => tx.partnershipId === partnership.id;
 
   for (const client of context.advanceClients) {
-    const index = client.transactions.findIndex((t) => t.partnershipId === partnership.id);
-    if (index === -1) continue;
+    const tx = client.transactions.find(matchPartnership);
+    if (!tx) continue;
 
     if (client.name === partnerName) {
       if (commission > 0) {
-        const updated = [...client.transactions];
-        const current = updated[index];
-        if (!current) continue;
-        updated[index] = {
-          ...current,
+        await updateClientTransaction('advance', client.id, context.userId, {
+          ...tx,
           amount: -commission,
           date: partnership.createdAt ?? Timestamp.now(),
           notes: `عمولة 0.5% شراكة: ${partnership.name}`,
           isSettled: true,
-        };
-        await updateBuyerTransactions(client.id, updated);
+        });
       } else {
-        await removePartnershipCommissionTransactions(client.id, partnership.id);
+        await deleteClientTransactionsWhere('advance', client.id, matchPartnership);
       }
       return;
     }
 
-    // Partner changed — drop the commission from the previous owner.
-    await removePartnershipCommissionTransactions(client.id, partnership.id);
+    // Partner changed — drop the commission from the previous owner(s).
+    await deleteClientTransactionsWhere('advance', client.id, matchPartnership);
   }
 
   if (commission > 0 && partnerName !== '') {
@@ -79,7 +78,7 @@ export async function syncPartnerCommission(
     const tx = commissionTx(partnership, commission);
 
     if (partnerClient) {
-      await updateBuyerTransactions(partnerClient.id, [...partnerClient.transactions, tx]);
+      await addClientTransaction('advance', partnerClient.id, context.userId, tx);
     } else {
       await createBuyerClient(context.userId, partnerName, tx);
     }
@@ -92,8 +91,12 @@ export async function removePartnerCommission(
   advanceClients: Client[],
 ): Promise<void> {
   for (const client of advanceClients) {
-    if (client.transactions.some((t) => t.partnershipId === partnershipId)) {
-      await removePartnershipCommissionTransactions(client.id, partnershipId);
+    if (client.transactions.some((tx) => tx.partnershipId === partnershipId)) {
+      await deleteClientTransactionsWhere(
+        'advance',
+        client.id,
+        (tx) => tx.partnershipId === partnershipId,
+      );
     }
   }
 }

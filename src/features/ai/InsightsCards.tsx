@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { getBusinessInsights } from '../../ai/insights';
 import type { BusinessInsights, InsightSeverity } from '../../ai/schemas';
 import { formatCurrency } from '../../utils/format';
@@ -55,11 +55,22 @@ export function InsightsCards({ snapshot }: InsightsCardsProps): ReactNode {
     }
   }, [snapshot]);
 
-  useEffect(() => {
-    void loadInsights();
-  }, [loadInsights]);
-
-  if (status === 'idle') return null;
+  // Manual trigger only: auto-firing on every dashboard open burns Gemini quota silently.
+  if (status === 'idle') {
+    return (
+      <section dir="rtl" aria-label="تحليلات ذكية" className="card card-pad flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-black text-slate-800 dark:text-slate-100">✨ تحليلات ذكية</h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            حلل أرصدتك وتأخيراتك واعرف توقعات السيولة عند الطلب.
+          </p>
+        </div>
+        <button type="button" onClick={() => void loadInsights()} className="btn-primary">
+          حلل الآن
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section dir="rtl" aria-label="تحليلات ذكية" className="space-y-3">
