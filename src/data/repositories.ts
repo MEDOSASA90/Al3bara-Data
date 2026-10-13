@@ -482,10 +482,18 @@ export function subscribeToAllTransactions(
   onData: (txs: (Transaction & TransactionDocMeta)[]) => void,
   onError: (error: Error) => void,
 ): Unsubscribe {
-  const ref = query(collectionGroup(db, 'transactions'), where('userId', '==', userId));
+  // No where() on purpose: a filtered collectionGroup query needs a Firestore
+  // index; an unfiltered one does not. Filter per-user client-side instead
+  // (the merge only attaches txs whose clientId belongs to this user's clients).
+  const ref = collectionGroup(db, 'transactions');
   return onSnapshot(
     ref,
-    (snapshot) => onData(snapshot.docs.map((d) => toTransactionDoc(d.id, d.data()))),
+    (snapshot) =>
+      onData(
+        snapshot.docs
+          .map((d) => toTransactionDoc(d.id, d.data()))
+          .filter((tx) => tx.userId === userId),
+      ),
     (error) => onError(error as Error),
   );
 }
